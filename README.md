@@ -34,7 +34,7 @@ pip install urwid
 sudo python ~/pidrop/pidrop-ui.py 
 ```
 
-__To make moving files back and forth between the Pi and the device SSHing in to it there's an import and export folder__
+__To make moving files back and forth between the Pi and the device SSHing in to it easier there's an import and export folder__
 These can be configured through the config process mentioned above
 
 For example you can then copy the whole export folder to the host machine with SCP
@@ -63,7 +63,7 @@ PIDROPFILE=/home/pi/pidrop/pidrop.py # Full path to your pidrop.py file
 ```console
 sudo crontab -e
 ```
-- And add, for example 
+- And add, for example (this will run the script once every hour on the hour)
 ```
 0 * * * * sh /home/pi/pidrop_cron.sh
 ```
