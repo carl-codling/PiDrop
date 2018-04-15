@@ -14,11 +14,11 @@ CL Tools and Text Based UI for managing Dropbox folders on a headless RaspberryP
 - Clone this repo to the home dir of your Pi
 - On first run of pidrop if certain config options aren't set then you'll be asked to add them. It's best to run with the cfg option first and configure all available options
 ```console
-sudo python ~/pidrop/pidrop.py cfg
+sudo python ~/PiDrop/pidrop.py cfg
 ```
 - You can then run the script again in default mode and any folders you chose to sync will now start to download 
 ```console
-sudo python ~/pidrop/pidrop.py 
+sudo python ~/PiDrop/pidrop.py 
 ```
 
 ## Text Based UI
@@ -31,7 +31,7 @@ pip install urwid
 ```
 - And then you can run
 ```console
-sudo python ~/pidrop/pidrop-ui.py 
+sudo python ~/PiDrop/pidrop-ui.py 
 ```
 
 __To make moving files back and forth between the Pi and the device SSHing in to it easier there's an import and export folder__
@@ -52,12 +52,12 @@ scp /path/of/file/to.send pi@192.168.0.23:/path/to/import/dir
 - To do this you need to create a cronjob on the Pi
 - First of all configure/edit the bash script we'll trigger with cron
 ```console
-sudo nano ~/pidrop/pidrop_cron.sh
+sudo nano ~/PiDrop/pidrop_cron.sh
 ```
 - And edit these 2 lines to match your setup:
 ```
 STORAGE=/media/pidrive # Full path of the drive where your local dropbox is
-PIDROPFILE=/home/pi/pidrop/pidrop.py # Full path to your pidrop.py file 
+PIDROPFILE=/home/pi/PiDrop/pidrop.py # Full path to your pidrop.py file 
 ```
 - Now create a cron job by editing the cron file:
 ```console
