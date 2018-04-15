@@ -13,6 +13,7 @@ CL Tools and Text Based UI for managing Dropbox folders on a headless RaspberryP
 
 - Clone this repo to the home dir of your Pi
 ```console
+cd ~
 git clone https://github.com/carl-codling/PiDrop.git
 ```
 - On first run of pidrop if certain config options aren't set then you'll be asked to add them. It's best to run with the cfg option first and configure all available options
@@ -79,4 +80,4 @@ __You will not get a full sync of the folder as if you had installed the Dropbox
 - If you delete a file/folder from a different location (eg. online or from your home pc software) PiBox will see that it has a file/folder locally that doesn't exist on the server and upload it again
 - Likewise if you move a file/folder PiBox will both upload to the old location and download from the new sp you'll end up with  duplicates
 
-* For these reasons all modifications on synced folders should be done through the PiDrop UI
+*__For these reasons all modifications on synced folders should be done through the PiDrop UI__*
