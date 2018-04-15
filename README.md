@@ -68,10 +68,11 @@ PIDROPFILE=/home/pi/PiDrop/pidrop.py # Full path to your pidrop.py file
 ```console
 sudo crontab -e
 ```
-- And add, for example (this will run the script once every hour on the hour)
+- And then add a cronjob to the end of the file:
 ```
-0 * * * * sh /home/pi/pidrop_cron.sh
+0 * * * * sh /home/pi/PiDrop/pidrop_cron.sh
 ```
+*(the above example will run the script once every hour on the hour)*
 
 ## Limitations
 - You can only sync root directories in your dropbox
