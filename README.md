@@ -3,9 +3,9 @@ CL Tools and Text Based UI for managing Dropbox folders on a headless RaspberryP
 
 ## Assumed Setup:
 
-- RaspberryPi 3
+This was built with:
+- RaspberryPi 3 with Raspbian Stretch Lite installed
 - External USB HD (I'm using a WD PiDrive) with enough storage for the dropbox folders you want to sync
-- Raspbian Stretch Lite
 - A device to SSH in to the Pi
 - A dropbox account and API access token (get one here https://www.dropbox.com/developers/apps)
 
