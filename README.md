@@ -77,8 +77,8 @@ sudo crontab -e
 ## Limitations
 - You can only sync root directories in your dropbox
 
-__You will not get a full sync of the folder as if you had installed the Dropbox propriety software. Any changes you make to a folder which is synced to PiDrop from a different location will not be known by PiDrop. This has at least the following implications:__
-- If you delete a file/folder from a different location (eg. online or from your home pc software) PiBox will see that it has a file/folder locally that doesn't exist on the server and upload it again
-- Likewise if you move a file/folder PiBox will both upload to the old location and download from the new sp you'll end up with  duplicates
+__Your local folders and the folders on the Dropbox servers should stay in sync so long as all deletions and file moves are done locally. If you make changes from a different machine  (eg. online or from your home pc software) PiDrop on your Pi will not be aware of this and conflicts may happen. This has at least the following implications:__
+- If you delete a file/folder from a different location such as another computer PiBox will see that it has a file/folder locally that doesn't exist on the server and upload it again
+- Likewise if you move a file/folder PiBox will both upload to the old location and download from the new so you'll end up with duplicates.
 
 *__For these reasons all modifications on synced folders should be done through the PiDrop UI__*
