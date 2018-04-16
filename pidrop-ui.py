@@ -163,7 +163,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def __init__(self, node):
         #print(node.get_value())
         self.__super.__init__(node)
-        path = self.get_node().get_value()['path']
+        path = self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name']
         if path in collapse_cache:
             self.expanded = collapse_cache[path]
         elif node.get_depth() > 0:
@@ -180,7 +180,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
     def update_expanded_icon(self):
         self.__super.update_expanded_icon()
-        collapse_cache[self.get_node().get_value()['path']] = self.expanded
+        collapse_cache[self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name']] = self.expanded
 
     def keypress(self, size, key):
         """allow subclasses to intercept keystrokes"""
@@ -460,7 +460,7 @@ class ImporterTreeWidget(urwid.TreeWidget):
     def __init__(self, node):
         #print(node.get_value())
         self.__super.__init__(node)
-        #self.update_expanded_icon()
+        self.update_expanded_icon()
         self._w = urwid.AttrWrap(self._w, None)
         self._w.attr = 'importer'
         self._w.focus_attr = 'dir focus'
@@ -673,6 +673,7 @@ def format_pibox_dir(dir, path):
 
 def build_pibox_list(dir='*'):
     if dir in ['*', 'pibox']:
+        print(collapse_cache)
         data = get_pibox_dir(PIBOX_DIR)[0]
         topnode = PiboxParentNode(data)
         listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
