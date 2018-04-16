@@ -302,7 +302,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 selected_files.append(p)
                 self._w.attr = 'dir select'
                 self._w.focus_attr = 'dir select focus'
-                if os.path.isdir(p):
+                if os.path.isdir(p) and 'children' in self.get_node().get_value():
                     self.expanded = False
                     self.update_expanded_icon()
             if len(selected_files) > 0:
