@@ -81,6 +81,8 @@ help_text = """
 
 """+notif_default_text
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
 notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'notifications')
 listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'body')
 importer_listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'importer')
@@ -346,6 +348,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def move_files(self, path, fname):
         global selected_files
         global file_mode
+        global dir_path
         global PIBOX_DIR
         rootlen = len(PIBOX_DIR)
         if os.path.isdir(path+'/'+fname):
@@ -364,6 +367,13 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 return None
             os.rename(f, newp)
             i+=1
+
+        # reset the json list of files to prevent conflicts
+        # TO DO: find a better way to manage this
+        f = open(dir_path+"/flist.json", 'w')
+        f.write('{}')
+        f.close()
+
         build_pibox_list()  
         notifications.set_text(str(i) + ' Selected files were moved.\n'+notif_default_text)
         selected_files = []
@@ -378,7 +388,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         nfolders = 0
         for f in selected_files:
             try:
-                dbx.files_delete_v2(f[rootlen:])
+                dbx.files_delete_v2('/'+f[rootlen:])
             except dropbox.exceptions.ApiError as err:
                     print('*** API error', err)
                     return None
