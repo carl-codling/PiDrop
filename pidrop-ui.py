@@ -23,7 +23,7 @@ __/\\\\\\\\\\\\\__________/\\\\\\\\\\\\_________________________________________
 from __future__ import print_function
 import os
 import json
-import os
+import time
 import unicodedata
 import six
 import urwid
@@ -54,7 +54,7 @@ palette = [
         ('exporter', 'light blue', 'black')
         ]
 
-notif_default_text = '[Q]uit program | [S]elect a file/folder for operation (move/delete/export) | Press the [H] key for help'
+notif_default_text = '[Q]uit program | [S]elect a file/folder | [L]ist details of file/folder | [H]elp'
 help_text = """
         Using this interface you can move/delete/import/export files in your dropbox folder
         ====================================================================================
@@ -216,6 +216,9 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
         elif key in ["i", "I"]:
             self.confirm_import_files()
+        
+        elif key in ["l", "L"]:
+            self.loc_details(path+'/'+fname)
              
         elif key == 'enter':
             rootlen = len(PIBOX_DIR)
@@ -325,6 +328,20 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             file_mode = None
             notifications.set_text('No files selected!\n'+notif_default_text)
+    
+    def loc_details(self, location):
+        if os.path.isdir(location):
+            fsize = 0
+            for (path, dirs, files) in os.walk(location):
+              for f in files:
+                fname = os.path.join(path, f)
+                fsize += os.path.getsize(fname)
+            notifications.set_text('This folder is %0.1f MB' % (fsize/(1024*1024.0)) + '\n'+notif_default_text)
+        else:
+            fsize = os.path.getsize(location)
+            mod = time.ctime(os.path.getmtime(location))
+            notifications.set_text('This file is %0.1f MB' % (fsize/(1024*1024.0)) + ' | Last modified: '+str(mod)+ '\n'+notif_default_text)
+
 
     def move_files(self, path, fname):
         global selected_files
