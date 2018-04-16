@@ -306,7 +306,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         global file_mode
         if len(selected_files) > 0:
             file_mode = 'delete'
-            notifications.set_text('Press [ENTER] to confirm moving the selected files to this location')
+            notifications.set_text('Press [ENTER] to confirm deletion of the selected files')
         else:
             file_mode = None
             notifications.set_text('No files selected!\n'+notif_default_text)
@@ -673,7 +673,6 @@ def format_pibox_dir(dir, path):
 
 def build_pibox_list(dir='*'):
     if dir in ['*', 'pibox']:
-        print(collapse_cache)
         data = get_pibox_dir(PIBOX_DIR)[0]
         topnode = PiboxParentNode(data)
         listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
