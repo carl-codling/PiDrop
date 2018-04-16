@@ -164,7 +164,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         path = self.get_node().get_value()['path']
         if path in collapse_cache:
             self.expanded = collapse_cache[path]
-        elif node.get_depth() > 1:
+        elif node.get_depth() > 0:
             self.expanded = False
         
         self._w = urwid.AttrWrap(self._w, None)
@@ -354,10 +354,10 @@ class PiboxTreeWidget(urwid.TreeWidget):
             p = path
         i=0
         for f in selected_files:
-            newp = p+'/'+f.split("/")[-1]
+            newp = '/'+p+'/'+f.split("/")[-1]
             try:
                 res = dbx.files_move(
-                    f[rootlen:], newp[rootlen:],
+                    '/'+f[rootlen:], newp[rootlen:],
                     autorename=True)
             except dropbox.exceptions.ApiError as err:
                 print('*** API error', err)
