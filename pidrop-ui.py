@@ -53,10 +53,12 @@ palette = [
         ('notifications', 'light green', 'black'),
         ('importer', 'white', 'light blue'),
         ('exporter', 'light blue', 'black'),
-        ('diradder', 'dark blue', 'white')
+        ('diradder', 'dark blue', 'white'),
+        ('input_box', 'dark blue', 'white'),
+        ('input_box_active', 'black', 'yellow')
         ]
 
-notif_default_text = '[Q]uit program | [S]elect a file/folder | [L]ist details of file/folder | [H]elp'
+notif_default_text = '[Q]uit program | [S]elect a file/folder | [L]ist details of file/folder | [N]ew directory | [H]elp'
 help_text = """
         Using this interface you can move/delete/import/export files in your dropbox folder
         ====================================================================================
@@ -89,10 +91,12 @@ notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'notifications')
 listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'body')
 importer_listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'importer')
 exporter_listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'exporter')
+input_box = urwid.AttrWrap(urwid.Text(''), 'input_box')
+
 selected_files = []
 import_files = []
-new_dir = None # placeholder for name of dir about to be created
 file_mode = None # can be any of [move, delete, export]
+new_dir_location = None
 
 collapse_cache = {}
 
@@ -116,13 +120,11 @@ class pibox_ui():
             urwid.AttrWrap(urwid.Padding(exporter_listbox, left=2, right=2), 'exporter'),
             header=urwid.AttrWrap(urwid.Text('Exporter folder'), 'header'),
             footer =urwid.AttrWrap(empty_exporter_button, 'footer'))
-        divider = urwid.Divider('-',1,0)
-        adder = urwid.Edit('New directory:')
-        urwid.connect_signal(adder, 'change', self.prepare_dir_adder)
-        self.dir_adder = urwid.Padding(urwid.AttrWrap(adder, 'diradder'), left=2, right=2)
 
-        self.sublists = urwid.AttrWrap(urwid.Pile([('pack', divider),('pack', self.dir_adder),('pack', divider),importer_container,exporter_container]),'exporter')
-        self.cols = urwid.Columns([('weight', 3,listbox), self.sublists])
+        self.sublists = urwid.AttrWrap(urwid.Pile([importer_container,exporter_container]),'exporter')
+        
+        main_section = urwid.Pile([listbox,('pack',input_box)])
+        self.cols = urwid.Columns([('weight', 3,main_section), self.sublists])
         self.mainview = urwid.Frame(
             self.cols,
             header=urwid.AttrWrap(self.header, 'head'),
@@ -159,19 +161,22 @@ class pibox_ui():
             except Exception as e:
                 print(e) 
         build_pibox_list('exporter')
+
+
+class PiBoxInput(urwid.Edit):
     
-    def prepare_dir_adder(self,w, txt):
-        global new_dir
-        global file_mode
-        if len(txt) < 1:
-            notifications.set_text(notif_default_text)
-            file_mode = None
-            new_dir = None
-        else:
-            notifications.set_text('Select a parent directory in the main browser and then hit [enter] to create new directory "'+txt+'"')
-            file_mode = 'add_dir'
-            # TODO - Sanitise
-            new_dir = txt
+    def keypress(self, size, key):
+        global new_dir_location
+        key = self.__super.keypress(size, key)
+        if key == 'enter':
+            dirname = self.get_edit_text()
+            if len(dirname) > 0:
+                os.mkdir(new_dir_location+'/'+dirname)
+                notifications.set_text('New directory "'+dirname+'" created at: '+new_dir_location+'\n'+notif_default_text)
+                file_mode = None
+                new_dir_location = None
+                build_pibox_list('pibox')
+
 
 class PiboxTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
@@ -247,6 +252,9 @@ class PiboxTreeWidget(urwid.TreeWidget):
         
         elif key in ["l", "L"]:
             self.loc_details(path+'/'+fname)
+        
+        elif key in ["n", "N"]:
+            self.new_dir(path, fname)
              
         elif key == 'enter':
             rootlen = len(PIBOX_DIR)
@@ -264,9 +272,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
             
             elif file_mode == 'import':
                 self.import_files(path, fname) 
-            
-            elif file_mode == 'add_dir':
-                self.create_dir(path, fname) 
             
         elif key == 'esc':
             selected_files = []
@@ -487,19 +492,16 @@ class PiboxTreeWidget(urwid.TreeWidget):
         import_files = []
         file_mode = None
 
-
-    def create_dir(self, path, fname):
-        global new_dir
-        global file_mode
+    def new_dir(self, path, fname):
+        global new_dir_location
         if os.path.isdir(path+'/'+fname):
-            p = path+'/'+fname
+            new_dir_location = path+'/'+fname
         else:
-            p = path
-        os.mkdir(p+'/'+new_dir)
-        notifications.set_text('New directory "'+new_dir+'" created.\n'+notif_default_text)
-        file_mode = None
-        new_dir = None
-        build_pibox_list('pibox')
+            new_dir_location = path
+        file_mode = 'new_dir'
+        input_box.original_widget = urwid.AttrWrap(PiBoxInput('New directory name:'), 'input_box_active')
+        notifications.set_text('Input a name for the new directory above then press [enter] to confirm creation.')
+
 
 class ImporterTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
@@ -736,6 +738,7 @@ def build_pibox_list(dir='*'):
         data = get_pibox_dir(EXPORT_DIR)[0]
         topnode = ExporterParentNode(data)
         exporter_listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'exporter')
+    input_box.original_widget = urwid.AttrWrap(urwid.Text(''), 'input_box')
 
 def main():
     #data = get_pibox_dir(PIBOX_DIR)
