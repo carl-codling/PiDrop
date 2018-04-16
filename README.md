@@ -20,7 +20,6 @@ git clone https://github.com/carl-codling/PiDrop.git
 ```console
 sudo python ~/PiDrop/pidrop.py cfg
 ```
-* NB. You will need to run this command 2 times on the first run *
 - You can then run the script again in default mode and any folders you chose to sync will now start to download 
 ```console
 sudo python ~/PiDrop/pidrop.py 

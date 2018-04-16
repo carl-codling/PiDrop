@@ -59,11 +59,8 @@ def main():
         cfga = json.load(json_file)
 
     rootdir = os.path.expanduser(cfga['rootdir'])
-    dbx = dropbox.Dropbox(cfga['token'])
-    try:
-        dbx.users_get_current_account()
-    except AuthError as err:
-        sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
+    
+    dbx = connect_dbx(cfga['token'])
 
     if args.funct == 'cfg':
         piboxd()
@@ -85,6 +82,14 @@ def main():
     fetch_if_not_in_local(dbx, flist, rootdir)
     dblog('END')
     return
+
+def connect_dbx(token):
+    dbx = dropbox.Dropbox(token)
+    try:
+        dbx.users_get_current_account()
+    except AuthError as err:
+        sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
+    return dbx
 
 def explore(dbx, cfga):
     with open(dir_path+'/flist.json') as json_file:  
@@ -120,27 +125,30 @@ def explore(dbx, cfga):
 
 
 def setup():
-    cfg = {'folders':[]}
+    cfga = {'folders':[]}
     token = raw_input('Enter your API token: ')
     if len(token.strip()):
-        cfg['token'] = token.strip()
+        cfga['token'] = token.strip()
         format_outp('token set', 'success')
     else:
         format_outp('please enter a valid token!', 'fail')
         setup()
     path = raw_input('Enter the path to a local dir where you will store your files: ')
     if os.path.isdir(path.strip()):
-        cfg['rootdir'] = path.strip()
+        cfga['rootdir'] = path.strip()
         format_outp('path set', 'success')
     else:
         format_outp('please enter a valid dir!', 'fail')
         setup()
     with open(dir_path+'/cfg.json', 'w') as outfile:  
-        json.dump(cfg, outfile)
+        json.dump(cfga, outfile)
     f = open(dir_path+'/flist.json', 'w')   
     f.write('{}')
     f.close()
-
+    format_outp('Great! That\'s the most important settings configured. Now please use the configuration guide below to make any further adjustments such as choosing Dropbox folders to sync.' , 'success')
+    format_outp('Type "help" for a list of commands', 'blue')
+    dbx = connect_dbx(cfga['token'])
+    return cfg(dbx, cfga)
 
 def cfg(dbx, cfga, var=None):
     if not var:
