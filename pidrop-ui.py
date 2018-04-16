@@ -46,6 +46,7 @@ EXPORT_DIR = cfga['export-dir']
 palette = [
         ('body', 'black', 'light gray'),
         ('header', 'white', 'dark blue'),
+        ('file', 'dark blue', 'light gray'),
         ('dir focus', 'dark red', 'white'),
         ('dir select', 'white', 'light green'),
         ('dir select focus', 'dark green', 'white'),
@@ -183,15 +184,19 @@ class PiboxTreeWidget(urwid.TreeWidget):
         self.__super.__init__(node)
         path = self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name']
         
+        self._w = urwid.AttrWrap(self._w, None)
+        self._w.focus_attr = 'dir focus'
+        
+        if os.path.isfile(path):
+            self._w.attr = 'file'
+
+
         if os.path.isdir(path) and 'children' in self.get_node().get_value():
             if path in collapse_cache:
                 self.expanded = collapse_cache[path]
             elif node.get_depth() > 0:
                 self.expanded = False
             self.update_expanded_icon()
-        
-        self._w = urwid.AttrWrap(self._w, None)
-        self._w.focus_attr = 'dir focus'
 
     def get_display_text(self):
         return self.get_node().get_value()['name']
