@@ -367,12 +367,20 @@ class PiboxTreeWidget(urwid.TreeWidget):
               for f in files:
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            notifications.set_text('This folder is %0.1f MB' % (fsize/(1024*1024.0)) + '\n'+notif_default_text)
+            notifications.set_text('This folder is ' + self.readable_bytes(fsize) + '\n'+notif_default_text)
         else:
             fsize = os.path.getsize(location)
             mod = time.ctime(os.path.getmtime(location))
-            notifications.set_text('This file is %0.1f MB' % (fsize/(1024*1024.0)) + ' | Last modified: '+str(mod)+ '\n'+notif_default_text)
+            notifications.set_text('This file is ' + self.readable_bytes(fsize) + ' | Last modified: '+str(mod)+ '\n'+notif_default_text)
 
+    def readable_bytes(self, b):
+        if b < (1024*1024):
+            out = ' %0.1f KB' % (b/1024.0)
+        elif b < (1024*1024*1024):
+            out = ' %0.1f MB' % (b/(1024*1024.0))
+        else:
+            out = ' %0.1f GB' % (b/(1024*1024*1024.0))
+        return out
 
     def move_files(self, path, fname):
         global selected_files
