@@ -182,10 +182,13 @@ class PiboxTreeWidget(urwid.TreeWidget):
         #print(node.get_value())
         self.__super.__init__(node)
         path = self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name']
-        if path in collapse_cache:
-            self.expanded = collapse_cache[path]
-        elif node.get_depth() > 0:
-            self.expanded = False
+        
+        if os.path.isdir(path) and 'children' in self.get_node().get_value():
+            if path in collapse_cache:
+                self.expanded = collapse_cache[path]
+            elif node.get_depth() > 0:
+                self.expanded = False
+            self.update_expanded_icon()
         
         self._w = urwid.AttrWrap(self._w, None)
         self._w.focus_attr = 'dir focus'
