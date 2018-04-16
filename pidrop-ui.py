@@ -167,15 +167,23 @@ class PiBoxInput(urwid.Edit):
     
     def keypress(self, size, key):
         global new_dir_location
+        global file_mode
         key = self.__super.keypress(size, key)
         if key == 'enter':
             dirname = self.get_edit_text()
-            if len(dirname) > 0:
+
+            if file_mode == 'new_dir' and len(dirname) > 0:
                 os.mkdir(new_dir_location+'/'+dirname)
                 notifications.set_text('New directory "'+dirname+'" created at: '+new_dir_location+'\n'+notif_default_text)
-                file_mode = None
-                new_dir_location = None
-                build_pibox_list('pibox')
+                
+            file_mode = None
+            new_dir_location = None
+            build_pibox_list('pibox')
+        elif key == 'esc':
+            file_mode = None
+            new_dir_location = None
+            notifications.set_text(notif_default_text)
+            build_pibox_list('pibox')
 
 
 class PiboxTreeWidget(urwid.TreeWidget):
@@ -319,10 +327,10 @@ class PiboxTreeWidget(urwid.TreeWidget):
                     self.expanded = False
                     self.update_expanded_icon()
             if len(selected_files) > 0:
-                file_mode = 'move'
+                #file_mode = 'move'
                 notifications.set_text('[m]ove selected files | [d]elete selected files | [e]xport selected files')
             else:
-                file_mode = None
+                #file_mode = None
                 notifications.set_text(notif_default_text)
 
     def confirm_move_files(self):
@@ -494,13 +502,14 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
     def new_dir(self, path, fname):
         global new_dir_location
+        global file_mode
         if os.path.isdir(path+'/'+fname):
             new_dir_location = path+'/'+fname
         else:
             new_dir_location = path
         file_mode = 'new_dir'
-        input_box.original_widget = urwid.AttrWrap(PiBoxInput('New directory name:'), 'input_box_active')
-        notifications.set_text('Input a name for the new directory above then press [enter] to confirm creation.')
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxInput('New directory name:'), 'input_box_active')])), 'body')
+        notifications.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
 class ImporterTreeWidget(urwid.TreeWidget):
@@ -622,6 +631,7 @@ class ExporterNode(urwid.TreeNode):
 
 class PiboxParentNode(urwid.ParentNode):
     """ Data storage object for interior/parent nodes """
+
     def load_widget(self):
         return PiboxTreeWidget(self)
 
