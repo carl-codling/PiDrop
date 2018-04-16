@@ -471,7 +471,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         selected_files = []
         file_mode = None
         notifications.set_text(str('files have been exported.\n'+notif_default_text))
-        build_pibox_list('exporter') 
+        build_pibox_list() 
 
     def import_files(self, path, fname):
         global import_files
