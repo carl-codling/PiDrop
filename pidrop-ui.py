@@ -232,7 +232,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def __init__(self, node):
         #print(node.get_value())
         self.__super.__init__(node)
-        path = self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name']
+        path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         
         self._w = urwid.AttrWrap(self._w, None)
         
@@ -584,6 +584,7 @@ class ImporterTreeWidget(urwid.TreeWidget):
     def __init__(self, node):
         #print(node.get_value())
         self.__super.__init__(node)
+        path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         if os.path.isdir(path) and 'children' in self.get_node().get_value():
             self.update_expanded_icon()
         self._w = urwid.AttrWrap(self._w, None)
@@ -666,6 +667,7 @@ class ExporterTreeWidget(urwid.TreeWidget):
     def __init__(self, node):
         #print(node.get_value())
         self.__super.__init__(node)
+        path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         if os.path.isdir(path) and 'children' in self.get_node().get_value():
             self.update_expanded_icon()
         self._w = urwid.AttrWrap(self._w, None)
@@ -845,7 +847,9 @@ def build_pibox_list(dir='*'):
         else:
             data = get_pibox_dir(PIBOX_DIR)[0]
         topnode = PiboxParentNode(data)
-        listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
+        walker = urwid.TreeWalker(topnode)
+        #urwid.connect_signal(walker,'modified',walking)
+        listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(walker), 'body')
 
     if dir in ['*', 'importer']:
         data = get_pibox_dir(IMPORT_DIR)[0]
@@ -857,6 +861,7 @@ def build_pibox_list(dir='*'):
         topnode = ExporterParentNode(data)
         exporter_listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'exporter')
     
+
 def main():
     #data = get_pibox_dir(PIBOX_DIR)
     #data = get_Pibox_tree()
