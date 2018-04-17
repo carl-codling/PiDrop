@@ -56,13 +56,12 @@ scp /path/of/file/to.send pi@192.168.0.23:/path/to/import/dir
 ## Setting it to run Auto-magically with Cron
 
 - To do this you need to create a cronjob on the Pi
-- First of all configure/edit the bash script we'll trigger with cron
+- First of all check that the bash script we'll trigger with cron is pointing to our Python script (if you installed in the home dir of your Pi it should be fine)
 ```console
 sudo nano ~/PiDrop/pidrop_cron.sh
 ```
-- And edit these 2 lines to match your setup:
+- And edit this line if you didn't install PiDrop in your Pi home dir:
 ```
-STORAGE=/media/pidrive # Full path of the drive where your local dropbox is
 PIDROPFILE=/home/pi/PiDrop/pidrop.py # Full path to your pidrop.py file 
 ```
 - Now create a cron job by editing the cron file:
