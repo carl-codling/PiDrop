@@ -389,32 +389,30 @@ class PiboxTreeWidget(urwid.TreeWidget):
         global selected_files
         global file_mode
 
-        if len(selected_files) < 1:
-            selected_files.append(self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name'])
-            self.set_style()
-
-        file_mode = 'move'
-        notifications.set_text('Press [ENTER] to confirm moving the selected files to this location')
+        if len(selected_files) > 0:
+            file_mode = 'move'
+            notifications.set_text('Press [ENTER] to confirm moving the selected files to this location')
+        else:
+            file_mode = None
+            notifications.set_text('No files selected!\n'+notif_default_text)
 
     def confirm_del_files(self):
         global selected_files
         global file_mode
-        if len(selected_files) > 0:
-            file_mode = 'delete'
-            notifications.set_text('Press [ENTER] to confirm deletion of the selected files')
-        else:
-            file_mode = None
-            notifications.set_text('No files selected!\n'+notif_default_text)
+        if len(selected_files) < 1:
+            fpath = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+            self.add_to_selected(fpath)
+        file_mode = 'delete'
+        notifications.set_text('Press [ENTER] to confirm deletion of the selected files')
 
     def confirm_export_files(self):
         global selected_files
         global file_mode
-        if len(selected_files) > 0:
-            file_mode = 'export'
-            notifications.set_text('Press [ENTER] to confirm copying the selected files to the export folder')
-        else:
-            file_mode = None
-            notifications.set_text('No files selected!\n'+notif_default_text)
+        if len(selected_files) < 1:
+            fpath = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+            self.add_to_selected(fpath)
+        file_mode = 'export'
+        notifications.set_text('Press [ENTER] to confirm copying the selected files to the export folder')
 
     def confirm_import_files(self):
         global import_files
