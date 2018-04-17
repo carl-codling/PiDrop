@@ -701,7 +701,18 @@ class PiboxParentNode(urwid.ParentNode):
     def load_child_keys(self):
         data = self.get_value()
         if 'children' in data:
-            return range(len(data['children']))
+            names = []
+            i=0
+            for child in data['children']:
+                names.append((child['name'],i))
+                i+=1
+            names.sort(key=lambda tup: tup[0])
+            
+            out = []
+            for n in names:
+                out.append(n[1])
+            return out
+            #return range(len(data['children']))
         else: return []
 
     def load_child_node(self, key):
