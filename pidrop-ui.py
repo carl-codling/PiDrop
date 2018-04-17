@@ -46,16 +46,20 @@ EXPORT_DIR = cfga['export-dir']
 palette = [
         ('body', 'black', 'light gray'),
         ('header', 'white', 'dark blue'),
-        ('file', 'dark blue', 'light gray'),
-        ('dir focus', 'dark red', 'white'),
-        ('dir select', 'white', 'light green'),
-        ('dir select focus', 'dark green', 'white'),
         ('notifications', 'light green', 'black'),
         ('importer', 'white', 'light blue'),
         ('exporter', 'light blue', 'black'),
         ('diradder', 'dark blue', 'white'),
         ('input_box', 'dark blue', 'white'),
-        ('input_box_active', 'black', 'yellow')
+        ('input_box_active', 'black', 'yellow'),
+        ('file', 'dark blue', 'light gray'),
+        ('file focus', 'dark magenta', 'white'),
+        ('dir', 'black', 'light gray'),
+        ('dir focus','light red', 'white'),
+        ('file select', 'white', 'light blue'),
+        ('file select focus', 'dark blue', 'white'),
+        ('dir select', 'white', 'light green'),
+        ('dir select focus', 'dark green', 'white')
         ]
 
 notif_default_text = '[Q]uit program | [S]elect a file/folder | [L]ist details of file/folder | [N]ew directory | [H]elp'
@@ -217,11 +221,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
         path = self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name']
         
         self._w = urwid.AttrWrap(self._w, None)
-        self._w.focus_attr = 'dir focus'
         
-        if os.path.isfile(path):
-            self._w.attr = 'file'
-
+        self.set_style()
 
         if os.path.isdir(path) and 'children' in self.get_node().get_value():
             if path in collapse_cache:
@@ -229,6 +230,24 @@ class PiboxTreeWidget(urwid.TreeWidget):
             elif node.get_depth() > 0:
                 self.expanded = False
             self.update_expanded_icon()
+ 
+    def set_style(self):
+        v = self.get_node().get_value()
+        path = v['path']+'/'+v['name']
+        if path in selected_files:
+            if  os.path.isfile(path):
+                self._w.attr = 'file select'
+                self._w.focus_attr = 'file select focus'
+            else:
+                self._w.attr = 'dir select'
+                self._w.focus_attr = 'dir select focus'
+        else:
+            if  os.path.isfile(path):
+                self._w.attr = 'file'
+                self._w.focus_attr = 'file focus'
+            else:
+                self._w.attr = 'dir'
+                self._w.focus_attr = 'dir focus'
 
     def get_display_text(self):
         return self.get_node().get_value()['name']
@@ -339,12 +358,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             if p in selected_files:
                 selected_files.remove(p)
-                self._w.attr = 'body'#
-                self._w.focus_attr = 'dir focus'
             else:
                 selected_files.append(p)
-                self._w.attr = 'dir select'
-                self._w.focus_attr = 'dir select focus'
                 if os.path.isdir(p) and 'children' in self.get_node().get_value():
                     self.expanded = False
                     self.update_expanded_icon()
@@ -354,6 +369,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             else:
                 #file_mode = None
                 notifications.set_text(notif_default_text)
+        self.set_style()
 
     def confirm_move_files(self):
         global selected_files
