@@ -62,7 +62,7 @@ palette = [
         ('dir select focus', 'dark green', 'white')
         ]
 
-notif_default_text = '[Q]uit program | [S]elect a file/folder | [L]ist details of file/folder | [N]ew directory | [H]elp'
+notif_default_text = '[Q]uit | [S]elect a file/dir | [L]ist details of file/dir | [N]ew directory | [R]ename file/dir | [H]elp'
 help_text = """
         Using this interface you can move/delete/import/export files in your dropbox folder
         ====================================================================================
