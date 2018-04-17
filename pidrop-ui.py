@@ -22,6 +22,7 @@ __/\\\\\\\\\\\\\__________/\\\\\\\\\\\\_________________________________________
 
 from __future__ import print_function
 import os
+import fnmatch
 import json
 import time
 import unicodedata
@@ -95,20 +96,22 @@ notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'notifications')
 listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'body')
 importer_listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'importer')
 exporter_listbox =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker({})), 'exporter')
-input_box = urwid.AttrWrap(urwid.Text(''), 'input_box')
 
 selected_files = []
 import_files = []
 file_mode = None # can be any of [move, delete, export]
 new_dir_location = None
+search_term = None
 
 collapse_cache = {}
 
 class pibox_ui():
     
     def __init__(self, data=None):
+        input_box = PiBoxSearchInput('Search:')
         self.header = urwid.AttrWrap(urwid.Text('PIBOX - manage your dropbox'), 'header')
         build_pibox_list()
+        urwid.connect_signal(input_box, 'change', set_search)
 
         empty_importer_button = urwid.Button('Empty Import folder')
         urwid.connect_signal(empty_importer_button, 'click', self.empty_importer)
@@ -127,7 +130,7 @@ class pibox_ui():
 
         self.sublists = urwid.AttrWrap(urwid.Pile([importer_container,exporter_container]),'exporter')
         
-        main_section = urwid.Pile([listbox,('pack',input_box)])
+        main_section = urwid.Pile([listbox,('pack',urwid.AttrWrap(input_box, 'input_box'))])
         self.cols = urwid.Columns([('weight', 3,main_section), self.sublists])
         self.mainview = urwid.Frame(
             self.cols,
@@ -167,7 +170,18 @@ class pibox_ui():
         build_pibox_list('exporter')
 
 
-class PiBoxInput(urwid.Edit):
+class PiBoxSearchInput(urwid.Edit):
+
+    def keypress(self, size, key):
+        key = self.__super.keypress(size, key)
+        if key == 'enter':
+            build_pibox_list('pibox')
+            self.set_edit_text('')
+        elif key == 'esc':
+            notifications.set_text(notif_default_text)
+            build_pibox_list()
+
+class PiBoxDirInput(urwid.Edit):
     
     def keypress(self, size, key):
         global new_dir_location
@@ -374,12 +388,13 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def confirm_move_files(self):
         global selected_files
         global file_mode
-        if len(selected_files) > 0:
-            file_mode = 'move'
-            notifications.set_text('Press [ENTER] to confirm moving the selected files to this location')
-        else:
-            file_mode = None
-            notifications.set_text('No files selected!\n'+notif_default_text)
+
+        if len(selected_files) < 1:
+            selected_files.append(self.get_node().get_value()['path']+'/'+self.get_node().get_value()['name'])
+            self.set_style()
+
+        file_mode = 'move'
+        notifications.set_text('Press [ENTER] to confirm moving the selected files to this location')
 
     def confirm_del_files(self):
         global selected_files
@@ -418,11 +433,11 @@ class PiboxTreeWidget(urwid.TreeWidget):
               for f in files:
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            notifications.set_text('This folder is ' + self.readable_bytes(fsize) + '\n'+notif_default_text)
+            notifications.set_text('This folder is ' + self.readable_bytes(fsize) + '\nFull path: '+fname+'\n--------------------\n'+notif_default_text)
         else:
             fsize = os.path.getsize(location)
             mod = time.ctime(os.path.getmtime(location))
-            notifications.set_text('This file is ' + self.readable_bytes(fsize) + ' | Last modified: '+str(mod)+ '\n'+notif_default_text)
+            notifications.set_text('This file is ' + self.readable_bytes(fsize) + '\nLast modified: '+str(mod)+ '\nFull path: '+location+'\n--------------------\n'+notif_default_text)
 
     def readable_bytes(self, b):
         if b < (1024*1024):
@@ -476,7 +491,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             return
         new_dir_location = path+'/'+fname
         file_mode = 'rename'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxInput('Rename '+fname+' to:\n'), 'input_box_active')])), 'body')
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('Rename '+fname+' to:\n'), 'input_box_active')])), 'body')
         notifications.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def delete_files(self, path, name):
@@ -558,7 +573,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             new_dir_location = path
         file_mode = 'new_dir'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxInput('New directory name:\n'), 'input_box_active')])), 'body')
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('New directory name:\n'), 'input_box_active')])), 'body')
         notifications.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
@@ -783,9 +798,34 @@ def format_pibox_dir(dir, path):
         out.append(o)
     return out
 
+def set_search(w, txt):
+    global search_term
+    if len(txt) > 0:
+        search_term = txt
+    else:
+        search_term = None
+
+def get_search_list():
+    global search_term
+    result = []
+    pattern = '*'+search_term.lower()+'*'
+    for root, dirs, files in os.walk(PIBOX_DIR):
+        for name in files:
+            if fnmatch.fnmatch(name.lower(), pattern):
+                result.append({'name':name,'path':root})
+        for name in dirs:
+            if fnmatch.fnmatch(name.lower(), pattern):
+                result.append({'name':name,'path':root})
+
+    return {'name':'Search Results for ['+search_term+']:', 'path':PIBOX_DIR, 'children':result}
+
 def build_pibox_list(dir='*'):
+    global search_term
     if dir in ['*', 'pibox']:
-        data = get_pibox_dir(PIBOX_DIR)[0]
+        if search_term:
+            data = get_search_list()
+        else:
+            data = get_pibox_dir(PIBOX_DIR)[0]
         topnode = PiboxParentNode(data)
         listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
 
@@ -798,8 +838,7 @@ def build_pibox_list(dir='*'):
         data = get_pibox_dir(EXPORT_DIR)[0]
         topnode = ExporterParentNode(data)
         exporter_listbox.original_widget =  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'exporter')
-    input_box.original_widget = urwid.AttrWrap(urwid.Text(''), 'input_box')
-
+    
 def main():
     #data = get_pibox_dir(PIBOX_DIR)
     #data = get_Pibox_tree()
