@@ -1,5 +1,7 @@
 # PiDrop
-CL Tools and Text Based UI for managing Dropbox folders on a headless RaspberryPi
+This project was created uising the Dropbox Python SDK to give me some tools to manage a dropbox on my Raspberry Pi 3 Model B+ and provides basic (see limitations below) syncing of dropbox folders and a text based UI (with Urwid) for manging those files and folders.
+
+Dropbox does provide some CL tools for working on Linux systems but they are'nt compatible with ARM based architecture so this code my be either a solution or starting point for other projects on similar setups. 
 
 ## Assumed Setup:
 
