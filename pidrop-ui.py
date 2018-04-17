@@ -175,16 +175,35 @@ class PiBoxInput(urwid.Edit):
             if file_mode == 'new_dir' and len(dirname) > 0:
                 os.mkdir(new_dir_location+'/'+dirname)
                 notifications.set_text('New directory "'+dirname+'" created at: '+new_dir_location+'\n'+notif_default_text)
-                
+            
+            elif file_mode == 'rename':
+                self.rename_path(dirname)
+
             file_mode = None
             new_dir_location = None
             build_pibox_list('pibox')
+        
         elif key == 'esc':
             file_mode = None
             new_dir_location = None
             notifications.set_text(notif_default_text)
             build_pibox_list('pibox')
 
+    def rename_path(self, new_name):
+        global PIBOX_DIR
+        global new_dir_location
+        rootlen = len(PIBOX_DIR)-1
+        current_name = new_dir_location.split("/")[-1]
+        new_path = new_dir_location[:-len(current_name)] + new_name
+
+        try:
+            res = dbx.files_move(
+                new_dir_location[rootlen:], new_path[rootlen:])
+        except dropbox.exceptions.ApiError as err:
+            print('*** API error', err)
+            return None
+        os.rename(new_dir_location, new_path)
+        notifications.set_text(new_dir_location[rootlen:]+ ' > renamed to > '+new_path[rootlen:])
 
 class PiboxTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
@@ -259,10 +278,13 @@ class PiboxTreeWidget(urwid.TreeWidget):
             self.confirm_import_files()
         
         elif key in ["l", "L"]:
-            self.loc_details(path+'/'+fname)
+            self.path_details(path+'/'+fname)
         
         elif key in ["n", "N"]:
             self.new_dir(path, fname)
+        
+        elif key in ["r", "R"]:
+            self.init_rename_path(path, fname)
              
         elif key == 'enter':
             rootlen = len(PIBOX_DIR)
@@ -279,7 +301,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 self.export_files() 
             
             elif file_mode == 'import':
-                self.import_files(path, fname) 
+                self.import_files(path, fname)  
             
         elif key == 'esc':
             selected_files = []
@@ -373,7 +395,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             file_mode = None
             notifications.set_text('No files selected!\n'+notif_default_text)
     
-    def loc_details(self, location):
+    def path_details(self, location):
         if os.path.isdir(location):
             fsize = 0
             for (path, dirs, files) in os.walk(location):
@@ -400,17 +422,17 @@ class PiboxTreeWidget(urwid.TreeWidget):
         global file_mode
         global dir_path
         global PIBOX_DIR
-        rootlen = len(PIBOX_DIR)
+        rootlen = len(PIBOX_DIR)-1
         if os.path.isdir(path+'/'+fname):
             p = path+'/'+fname
         else:
             p = path
         i=0
         for f in selected_files:
-            newp = '/'+p+'/'+f.split("/")[-1]
+            newp = p+'/'+f.split("/")[-1]
             try:
                 res = dbx.files_move(
-                    '/'+f[rootlen:], newp[rootlen:],
+                    f[rootlen:], newp[rootlen:],
                     autorename=True)
             except dropbox.exceptions.ApiError as err:
                 print('*** API error', err)
@@ -428,6 +450,18 @@ class PiboxTreeWidget(urwid.TreeWidget):
         notifications.set_text(str(i) + ' Selected files were moved.\n'+notif_default_text)
         selected_files = []
         file_mode = None
+    
+    def init_rename_path(self, path, fname):
+        global new_dir_location
+        global file_mode
+
+        if self.get_node().get_depth() < 1:
+            notifications.set_text('Cannot rename this folder from here')
+            return
+        new_dir_location = path+'/'+fname
+        file_mode = 'rename'
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxInput('Rename '+fname+' to:\n'), 'input_box_active')])), 'body')
+        notifications.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def delete_files(self, path, name):
         global selected_files
@@ -508,7 +542,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             new_dir_location = path
         file_mode = 'new_dir'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxInput('New directory name:'), 'input_box_active')])), 'body')
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxInput('New directory name:\n'), 'input_box_active')])), 'body')
         notifications.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
