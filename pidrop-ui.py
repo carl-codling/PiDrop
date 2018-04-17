@@ -584,7 +584,8 @@ class ImporterTreeWidget(urwid.TreeWidget):
     def __init__(self, node):
         #print(node.get_value())
         self.__super.__init__(node)
-        self.update_expanded_icon()
+        if os.path.isdir(path) and 'children' in self.get_node().get_value():
+            self.update_expanded_icon()
         self._w = urwid.AttrWrap(self._w, None)
         self._w.attr = 'importer'
         self._w.focus_attr = 'dir focus'
@@ -665,7 +666,8 @@ class ExporterTreeWidget(urwid.TreeWidget):
     def __init__(self, node):
         #print(node.get_value())
         self.__super.__init__(node)
-        #self.update_expanded_icon()
+        if os.path.isdir(path) and 'children' in self.get_node().get_value():
+            self.update_expanded_icon()
         self._w = urwid.AttrWrap(self._w, None)
         self._w.attr = 'exporter'
         self._w.focus_attr = 'dir focus'
