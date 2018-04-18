@@ -29,6 +29,7 @@ import unicodedata
 import six
 import urwid
 import shutil
+import subprocess
 
 import dropbox
 
@@ -60,10 +61,11 @@ palette = [
         ('file select', 'white', 'light blue'),
         ('file select focus', 'dark blue', 'white'),
         ('dir select', 'white', 'light green'),
-        ('dir select focus', 'dark green', 'white')
+        ('dir select focus', 'dark green', 'white'),
+        ('details', 'yellow', 'dark blue')
         ]
 
-notif_default_text = '[Q]uit | [S]elect a file/dir | [L]ist details of file/dir | [N]ew directory | [R]ename file/dir | [H]elp'
+notif_default_text = '[Q]uit | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
 help_text = """
         Using this interface you can move/delete/import/export files in your dropbox folder
         ====================================================================================
@@ -163,7 +165,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
         #print(node.get_value())
         self.__super.__init__(node)
         path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        
         self._w = urwid.AttrWrap(self._w, None)
         
         self.set_style()
@@ -239,15 +240,15 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
         elif key in ["i", "I"]:
             self.confirm_import_files()
-        
-        elif key in ["l", "L"]:
-            self.path_details(path+os.sep+fname)
-        
+
         elif key in ["n", "N"]:
             self.new_dir(path, fname)
         
         elif key in ["r", "R"]:
             self.init_rename_path(path, fname)
+        
+        elif key in ["p", "P"]:
+            self.more_path_details()
              
         elif key == 'enter':
             rootlen = len(PIBOX_DIR)
@@ -354,18 +355,34 @@ class PiboxTreeWidget(urwid.TreeWidget):
             file_mode = None
             notifications.set_text('No files selected!\n'+notif_default_text)
     
-    def path_details(self, location):
+    def path_details(self):
+        global fdetails
+        global more_details
+        global PIBOX_DIR
+        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+        out = '\nFull path: '+location
+        if os.path.isfile(location):
+            fsize = os.path.getsize(location)
+            out += '\nSize: '+self.readable_bytes(fsize)
+        fdetails.set_text(out)
+        more_details.set_text('')
+
+    def more_path_details(self):
+        global more_details
+        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         if os.path.isdir(location):
             fsize = 0
+            nfiles = 0
             for (path, dirs, files) in os.walk(location):
               for f in files:
+                nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            notifications.set_text('This folder is ' + self.readable_bytes(fsize) + '\nFull path: '+fname+'\n--------------------\n'+notif_default_text)
+            more_details.set_text('Size: ' + self.readable_bytes(fsize) + ' (in '+str(nfiles)+' files)\n')
         else:
-            fsize = os.path.getsize(location)
             mod = time.ctime(os.path.getmtime(location))
-            notifications.set_text('This file is ' + self.readable_bytes(fsize) + '\nLast modified: '+str(mod)+ '\nFull path: '+location+'\n--------------------\n'+notif_default_text)
+            typ = subprocess.check_output(['file', '--mime-type', location])
+            more_details.set_text('Last modified: '+str(mod)+ ' \nFile type: '+typ[len(location)+2:])
 
     def readable_bytes(self, b):
         if b < (1024*1024):
@@ -707,6 +724,13 @@ class ExporterParentNode(urwid.ParentNode):
 
         return childclass(childdata, parent=self, key=key, depth=childdepth)
 
+class PiboxWalker(urwid.TreeWalker):
+    def __init__(self, start_from):
+        self.focus = start_from
+        urwid.connect_signal(self, 'modified', self.walking)
+    def walking(self):
+        self.focus.get_widget().path_details()
+
 def empty_importer(i):
     for the_file in os.listdir(IMPORT_DIR):
         file_path = os.path.join(IMPORT_DIR, the_file)
@@ -807,7 +831,7 @@ def get_pibox_listbox():
     else:
         data = get_pibox_dir(PIBOX_DIR)[0]
     topnode = PiboxParentNode(data)
-    walker = urwid.TreeWalker(topnode)
+    walker = PiboxWalker(topnode)
     #urwid.connect_signal(walker, 'modified', walking)
     return  urwid.TreeListBox(walker)
 
@@ -822,6 +846,9 @@ def get_exporter_listbox():
     data = get_pibox_dir(EXPORT_DIR)[0]
     topnode = ExporterParentNode(data)
     return  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'exporter')
+
+def more_details(w):
+    listbox.original_widget.body.focus.get_widget().more_path_details()
 
 def main():
     loop = urwid.MainLoop(mainview, palette, unhandled_input=unhandled_input)
@@ -861,13 +888,23 @@ notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'notifications')
 
 # primary elements
 header = urwid.AttrWrap(urwid.Text('PIBOX - manage your dropbox'), 'header')
-sublists = urwid.AttrWrap(urwid.Pile([importer_container,exporter_container]),'exporter')
+fdetails = urwid.Text('')
+more_details_btn = urwid.Button('More Details')
+urwid.connect_signal(more_details_btn, 'click', more_details)
+more_details = urwid.Text('')
+d = urwid.AttrWrap(urwid.Padding(urwid.ListBox([fdetails,more_details]), left=2, right=2),'details')
+fdetails_container = urwid.Frame(
+    d,
+    header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header'),
+    footer=urwid.AttrWrap(more_details_btn, 'footer')
+)
+sublists = urwid.AttrWrap(urwid.Pile([fdetails_container,importer_container,exporter_container]),'exporter')
 main_section = urwid.Pile([listbox,('pack',urwid.AttrWrap(input_box, 'input_box'))])
 cols = urwid.Columns([('weight', 3,main_section), sublists])
 mainview = urwid.Frame(
     cols,
     header=urwid.AttrWrap(header, 'head'),
-    footer=urwid.Padding(notifications, left=5, right=5)
+    footer=urwid.Padding(notifications, left=2, right=2)
 )
 
 
