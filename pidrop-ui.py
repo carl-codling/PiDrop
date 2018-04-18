@@ -59,9 +59,9 @@ palette = [
         ('dir', 'black', 'light gray'),
         ('dir focus','light red', 'white'),
         ('file select', 'white', 'light blue'),
-        ('file select focus', 'dark blue', 'white'),
+        ('file select focus', 'light blue', 'dark gray'),
         ('dir select', 'white', 'light green'),
-        ('dir select focus', 'dark green', 'white'),
+        ('dir select focus', 'light green', 'dark gray'),
         ('details', 'yellow', 'dark blue')
         ]
 
