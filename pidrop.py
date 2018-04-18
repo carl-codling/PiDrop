@@ -330,7 +330,7 @@ def list_folder(dbx, folder, subfolder=''):
 def fetch_if_not_in_local(dbx, flist, rootdir):
     for f, a in flist.items():
         localpath = rootdir+'/'+f
-        dblog('checking if local instance of file exists: '+localpath)
+        dblog('checking if local instance of dir exists: '+localpath)
         if os.path.isdir(localpath):
             dblog('Folder exists: '+ localpath)
         else:
