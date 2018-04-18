@@ -41,6 +41,8 @@ sudo python ~/PiDrop/pidrop-ui.py
 ```
 
 __To make moving files back and forth between the Pi and the device SSHing in to it easier there's an import and export folder__
+* See the section 'Simplify Sending and Recieviing from your local machine:' at the end of this file for more ideas
+
 These can be configured through the config process mentioned above
 
 For example you can then copy the whole export folder to the host machine with SCP
@@ -82,3 +84,45 @@ __Your local folders and the folders on the Dropbox servers should stay in sync 
 - Likewise if you move a file/folder PiBox will both upload to the old location and download from the new so you'll end up with duplicates.
 
 *__For these reasons all modifications on synced folders should be done through the PiDrop UI__*
+
+### Simplify Sending and Recieviing from your local machine:
+
+To simplify this process I set up a Bash script on my local machine that allows me to simply type 'pidrop get' or 'pidrop send' in to a terminal. Here are the sreps I followed:
+
+1) Create 2 folders on your local machine that match the names of your import and export folders on the Pi. In the example we have pidrop_in and pidrop_out
+2) Create a file called pidrop in /usr/bin
+```console
+sudo touch /usr/bin/pidrop
+```
+3) Give it execute permissions
+```console
+sudo chmod -x /usr/bin/pidrop
+```
+4) Open it for editing
+```console
+sudo nano /usr/bin/pidrop
+```
+5) Enter the following text changing PI_PATH, LOCAL_PATH, INBOX, OUTBOX and PIIP accordingly
+```console
+#!/bin/bash
+PI_PATH=/media/pidrive #location of you import and export dirs on the Pi
+LOCAL_PATH=/home/kailash #location of the folders on your local machine
+INBOX=dbox_in #import dir name
+OUTBOX=dbox_out #export dir name
+if [ -z ${2+x} ]; then
+    PIIP=192.168.0.23 #ip address of your Pi
+else
+    PIIP=$2
+fi
+if [[ $1 = 'send' ]]; then
+    scp -r ${LOCAL_PATH}/${INBOX} pi@${PIIP}:${PI_PATH}
+elif [[ $1 = 'get' ]]; then
+    scp -r -l 2000 pi@${PIIP}:${PI_PATH}/${OUTBOX} ${LOCAL_PATH} # -l 2000 limitation can be removed if not necessary
+fi
+
+```
+6) Now you can simply type 'pidrop get' or 'pidrop send' in to a terminal to transfer files back and forth.
+NB. If the address of your Pi changes frequently you can run these commands as:
+```
+ pidrop get/send <Raspberry Pi IP>
+```
