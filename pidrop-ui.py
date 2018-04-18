@@ -92,7 +92,6 @@ help_text = """
 
 """+notif_default_text
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
 
 selected_files = []
 import_files = []
@@ -142,8 +141,6 @@ class PiBoxDirInput(urwid.Edit):
             build_pibox_list('pibox')
 
     def rename_path(self, new_name):
-        global PIBOX_DIR
-        global new_dir_location
         rootlen = len(PIBOX_DIR)-1
         current_name = new_dir_location.split(os.sep)[-1]
         new_path = new_dir_location[:-len(current_name)] + new_name
@@ -278,8 +275,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
     def add_to_selected(self,p):
         global selected_files;
-        global file_mode
-        global PIBOX_DIR
 
         # Check that we're not adding a file that exists in already added dir
         parts = p[1:].split(os.sep)
@@ -317,7 +312,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
         self.set_style()
 
     def confirm_move_files(self):
-        global selected_files
         global file_mode
 
         if len(selected_files) > 0:
@@ -328,7 +322,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
             notifications.set_text('No files selected!\n'+notif_default_text)
 
     def confirm_del_files(self):
-        global selected_files
         global file_mode
         if len(selected_files) < 1:
             fpath = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
@@ -337,7 +330,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
         notifications.set_text('Press [ENTER] to confirm deletion of the selected files')
 
     def confirm_export_files(self):
-        global selected_files
         global file_mode
         if len(selected_files) < 1:
             fpath = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
@@ -346,7 +338,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
         notifications.set_text('Press [ENTER] to confirm copying the selected files to the export folder')
 
     def confirm_import_files(self):
-        global import_files
         global file_mode
         if len(import_files) > 0:
             file_mode = 'import'
@@ -356,9 +347,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
             notifications.set_text('No files selected!\n'+notif_default_text)
     
     def path_details(self):
-        global fdetails
-        global more_details
-        global PIBOX_DIR
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         out = '\nFull path: '+location
         if os.path.isfile(location):
@@ -368,7 +356,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
         more_details.set_text('')
 
     def more_path_details(self):
-        global more_details
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         if os.path.isdir(location):
             fsize = 0
@@ -396,8 +383,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def move_files(self, path, fname):
         global selected_files
         global file_mode
-        global dir_path
-        global PIBOX_DIR
         rootlen = len(PIBOX_DIR)-1
         if os.path.isdir(path+os.sep+fname):
             p = path+os.sep+fname
@@ -430,7 +415,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def init_rename_path(self, path, fname):
         global new_dir_location
         global file_mode
-
         if self.get_node().get_depth() < 1:
             notifications.set_text('Cannot rename this folder from here')
             return
@@ -442,7 +426,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def delete_files(self, path, name):
         global selected_files
         global file_mode
-        global PIBOX_DIR
         rootlen = len(PIBOX_DIR)
         nfiles = 0
         nfolders = 0
@@ -466,7 +449,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def export_files(self):
         global selected_files
         global file_mode
-        global EXPORT_DIR
         
         for p in selected_files:
             dest = EXPORT_DIR + os.sep + p.split(os.sep)[-1]
@@ -494,7 +476,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def import_files(self, path, fname):
         global import_files
         global file_mode
-        global IMPORT_DIR
         rootlen = len(IMPORT_DIR)
         if os.path.isdir(path+os.sep+fname):
             p = path+os.sep+fname
@@ -550,8 +531,6 @@ class ImporterTreeWidget(urwid.TreeWidget):
         return key
 
     def unhandled_keys(self, size, key):
-        global import_files;
-        global file_mode;
 
         path = self.get_node().get_value()['path']
         fname = self.get_node().get_value()['name']
@@ -562,7 +541,6 @@ class ImporterTreeWidget(urwid.TreeWidget):
     def add_to_selected(self,p):
         global import_files;
         global file_mode
-        global IMPORT_DIR
 
         # Check that we're not adding a file that exists in already added dir
         parts = p[1:].split(os.sep)
@@ -792,7 +770,6 @@ def set_search(w, txt):
         search_term = None
 
 def get_search_list():
-    global search_term
     result = []
     pattern = '*'+search_term.lower()+'*'
     for root, dirs, files in os.walk(PIBOX_DIR):
@@ -811,9 +788,6 @@ def get_search_list():
 #     notifications.set_text(str(listbox.get_focus()))
 
 def build_pibox_list(dir='*'):
-    global listbox
-    global importer_listbox
-    global exporter_listbox
     if dir in ['*', 'pibox']:
         listbox.original_widget = get_pibox_listbox()
 
@@ -824,8 +798,6 @@ def build_pibox_list(dir='*'):
         exporter_listbox.original_widget = get_exporter_listbox()
  
 def get_pibox_listbox():
-    global search_term
-    global PIBOX_DIR
     if search_term:
         data = get_search_list()
     else:
@@ -836,13 +808,11 @@ def get_pibox_listbox():
     return  urwid.TreeListBox(walker)
 
 def get_importer_listbox():
-    global IMPORT_DIR
     data = get_pibox_dir(IMPORT_DIR)[0]
     topnode = ImporterParentNode(data)
     return  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'importer')
 
 def get_exporter_listbox():
-    global EXPORT_DIR
     data = get_pibox_dir(EXPORT_DIR)[0]
     topnode = ExporterParentNode(data)
     return  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'exporter')
