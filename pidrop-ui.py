@@ -33,39 +33,7 @@ import subprocess
 
 import dropbox
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-with open(dir_path+'/cfg.json') as json_file:  
-        cfga = json.load(json_file)
-dbx = dropbox.Dropbox(cfga['token'])
 
-
-PIBOX_DIR = cfga['rootdir']
-
-IMPORT_DIR = cfga['import-dir']
-EXPORT_DIR = cfga['export-dir']
-
-
-palette = [
-        ('body', 'black', 'light gray'),
-        ('header', 'white', 'dark blue'),
-        ('notifications', 'light green', 'black'),
-        ('importer', 'white', 'light blue'),
-        ('exporter', 'light blue', 'black'),
-        ('diradder', 'dark blue', 'white'),
-        ('input_box', 'dark blue', 'white'),
-        ('input_box_active', 'black', 'yellow'),
-        ('file', 'dark blue', 'light gray'),
-        ('file focus', 'dark magenta', 'white'),
-        ('dir', 'black', 'light gray'),
-        ('dir focus','light red', 'white'),
-        ('file select', 'white', 'light blue'),
-        ('file select focus', 'light blue', 'dark gray'),
-        ('dir select', 'white', 'light green'),
-        ('dir select focus', 'light green', 'dark gray'),
-        ('details', 'yellow', 'dark blue')
-        ]
-
-notif_default_text = '[Q]uit | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
 help_text = """
         Using this interface you can move/delete/import/export files in your dropbox folder
         ====================================================================================
@@ -90,18 +58,7 @@ help_text = """
 
 ---------------------------------------------------------------------------------------------
 
-"""+notif_default_text
-
-
-selected_files = []
-import_files = []
-file_mode = None # can be any of [move, delete, export]
-new_dir_location = None
-search_term = None
-#current_pos = None
-
-collapse_cache = {}
-
+"""
 
 class PiBoxSearchInput(urwid.Edit):
 
@@ -304,10 +261,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
                     self.expanded = False
                     self.update_expanded_icon()
             if len(selected_files) > 0:
-                #file_mode = 'move'
                 notifications.set_text('[m]ove selected files | [d]elete selected files | [e]xport selected files')
             else:
-                #file_mode = None
                 notifications.set_text(notif_default_text)
         self.set_style()
 
@@ -420,7 +375,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             return
         new_dir_location = path+os.sep+fname
         file_mode = 'rename'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('Rename '+fname+' to:\n'), 'input_box_active')])), 'body')
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('Rename '+fname+' to:\n'), 'search_box_active')])), 'body')
         notifications.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def delete_files(self, path, name):
@@ -499,7 +454,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             new_dir_location = path
         file_mode = 'new_dir'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('New directory name:\n'), 'input_box_active')])), 'body')
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('New directory name:\n'), 'search_box_active')])), 'body')
         notifications.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
@@ -782,11 +737,6 @@ def get_search_list():
 
     return {'name':'Search Results for ['+search_term+']:', 'path':PIBOX_DIR, 'children':result}
 
-# def walking():
-#     global current_pos
-#     current_pos = listbox.get_focus()[1]
-#     notifications.set_text(str(listbox.get_focus()))
-
 def build_pibox_list(dir='*'):
     if dir in ['*', 'pibox']:
         listbox.original_widget = get_pibox_listbox()
@@ -796,6 +746,8 @@ def build_pibox_list(dir='*'):
 
     if dir in ['*', 'exporter']:
         exporter_listbox.original_widget = get_exporter_listbox()
+    fdetails.set_text('')
+    more_details.set_text('')
  
 def get_pibox_listbox():
     if search_term:
@@ -820,62 +772,143 @@ def get_exporter_listbox():
 def more_details(w):
     listbox.original_widget.body.focus.get_widget().more_path_details()
 
+def construct_importer_listbox():
+    global importer_listbox
+    global importer_container
+    # Importer folder browser elements
+    importer_listbox =  get_importer_listbox()
+    empty_importer_button = urwid.Button('Empty Import folder')
+    urwid.connect_signal(empty_importer_button, 'click', empty_importer)
+    importer_container = urwid.Frame(
+        urwid.AttrWrap(urwid.Padding(importer_listbox, left=2, right=2), 'importer'),
+        header=urwid.AttrWrap(urwid.Text('Importer folder'), 'header'),
+        footer =urwid.AttrWrap(empty_importer_button, 'footer')
+    )
+
+def construct_exporter_listbox():
+    global exporter_listbox
+    global exporter_container
+    # Export folder browser elements
+    exporter_listbox =  get_exporter_listbox()
+    empty_exporter_button = urwid.Button('Empty Export folder')
+    urwid.connect_signal(empty_exporter_button, 'click', empty_exporter)
+    exporter_container = urwid.Frame(
+        urwid.AttrWrap(urwid.Padding(exporter_listbox, left=2, right=2), 'exporter'),
+        header=urwid.AttrWrap(urwid.Text('Exporter folder'), 'header'),
+        footer =urwid.AttrWrap(empty_exporter_button, 'footer')
+    )
+
+def construct_properties_box():
+    global fdetails
+    global more_details
+    global fdetails_container
+    fdetails = urwid.Text('')
+    more_details_btn = urwid.Button('More Details')
+    urwid.connect_signal(more_details_btn, 'click', more_details)
+    more_details = urwid.Text('')
+    d = urwid.AttrWrap(urwid.Padding(urwid.ListBox([fdetails,more_details]), left=2, right=2),'details')
+    fdetails_container = urwid.Frame(
+        d,
+        header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header'),
+        footer=urwid.AttrWrap(more_details_btn, 'footer')
+    )
+
+def construct_right_column():
+    global right_column
+    construct_importer_listbox()
+    construct_exporter_listbox()
+    construct_properties_box()
+    right_column = urwid.AttrWrap(urwid.Pile([fdetails_container,importer_container,exporter_container]),'exporter')
+
+def construct_main_column():
+    global listbox
+    global search_box
+    # Main directory browser
+    listbox =  urwid.AttrWrap(get_pibox_listbox(), 'body')
+    # search input element
+    search_box = PiBoxSearchInput('Search:')
+    urwid.connect_signal(search_box, 'change', set_search)
+
+def construct_mainview():
+    global notifications
+    global mainview
+    # notifications bar
+    notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'notifications')
+
+    # primary elements
+    header = urwid.AttrWrap(urwid.Text('PIBOX - manage your dropbox'), 'header')
+     
+    main_section = urwid.Pile([listbox,('pack',urwid.AttrWrap(search_box, 'search_box'))])
+    cols = urwid.Columns([('weight', 3,main_section), right_column])
+    mainview = urwid.Frame(
+        cols,
+        header=urwid.AttrWrap(header, 'head'),
+        footer=urwid.Padding(notifications, left=2, right=2)
+    )
+
+def load_config():
+    global dir_path
+    global cfga
+    global PIBOX_DIR
+    global IMPORT_DIR
+    global EXPORT_DIR
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    with open(dir_path+'/cfg.json') as json_file:  
+            cfga = json.load(json_file)
+    PIBOX_DIR = cfga['rootdir']
+    IMPORT_DIR = cfga['import-dir']
+    EXPORT_DIR = cfga['export-dir']
+
+def dropbox_connect():
+    global dbx
+    dbx = dropbox.Dropbox(cfga['token'])
+
 def main():
+    global selected_files
+    global import_files
+    global new_dir_location
+    global search_term
+    global file_mode
+    global collapse_cache 
+    global palette
+    global notif_default_text
+    palette = [
+        ('body', 'black', 'light gray'),
+        ('header', 'white', 'dark blue'),
+        ('notifications', 'light green', 'black'),
+        ('importer', 'white', 'light blue'),
+        ('exporter', 'light blue', 'black'),
+        ('diradder', 'dark blue', 'white'),
+        ('search_box', 'dark blue', 'white'),
+        ('search_box_active', 'black', 'yellow'),
+        ('file', 'dark blue', 'light gray'),
+        ('file focus', 'dark magenta', 'white'),
+        ('dir', 'black', 'light gray'),
+        ('dir focus','light red', 'white'),
+        ('file select', 'white', 'light blue'),
+        ('file select focus', 'light blue', 'dark gray'),
+        ('dir select', 'white', 'light green'),
+        ('dir select focus', 'light green', 'dark gray'),
+        ('details', 'yellow', 'dark blue')
+        ]
+    notif_default_text = '[Q]uit | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
+    selected_files = []
+    import_files = []
+    new_dir_location = None
+    search_term = None
+    file_mode = None
+    collapse_cache = {}
+    load_config()
+    dropbox_connect()
+    construct_right_column()
+    construct_main_column()
+    construct_mainview()
     loop = urwid.MainLoop(mainview, palette, unhandled_input=unhandled_input)
     loop.run()
 
 
 
-# Main directory browser
-listbox =  urwid.AttrWrap(get_pibox_listbox(), 'body')
 
-# Import folder browser elements
-importer_listbox =  get_importer_listbox()
-empty_importer_button = urwid.Button('Empty Import folder')
-urwid.connect_signal(empty_importer_button, 'click', empty_importer)
-importer_container = urwid.Frame(
-    urwid.AttrWrap(urwid.Padding(importer_listbox, left=2, right=2), 'importer'),
-    header=urwid.AttrWrap(urwid.Text('Importer folder'), 'header'),
-    footer =urwid.AttrWrap(empty_importer_button, 'footer')
-)
-
-# Export foler browser elements
-exporter_listbox =  get_exporter_listbox()
-empty_exporter_button = urwid.Button('Empty Export folder')
-urwid.connect_signal(empty_exporter_button, 'click', empty_exporter)
-exporter_container = urwid.Frame(
-    urwid.AttrWrap(urwid.Padding(exporter_listbox, left=2, right=2), 'exporter'),
-    header=urwid.AttrWrap(urwid.Text('Exporter folder'), 'header'),
-    footer =urwid.AttrWrap(empty_exporter_button, 'footer')
-)
-
-# search input element
-input_box = PiBoxSearchInput('Search:')
-urwid.connect_signal(input_box, 'change', set_search)
-
-# notifications bar
-notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'notifications')
-
-# primary elements
-header = urwid.AttrWrap(urwid.Text('PIBOX - manage your dropbox'), 'header')
-fdetails = urwid.Text('')
-more_details_btn = urwid.Button('More Details')
-urwid.connect_signal(more_details_btn, 'click', more_details)
-more_details = urwid.Text('')
-d = urwid.AttrWrap(urwid.Padding(urwid.ListBox([fdetails,more_details]), left=2, right=2),'details')
-fdetails_container = urwid.Frame(
-    d,
-    header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header'),
-    footer=urwid.AttrWrap(more_details_btn, 'footer')
-)
-sublists = urwid.AttrWrap(urwid.Pile([fdetails_container,importer_container,exporter_container]),'exporter')
-main_section = urwid.Pile([listbox,('pack',urwid.AttrWrap(input_box, 'input_box'))])
-cols = urwid.Columns([('weight', 3,main_section), sublists])
-mainview = urwid.Frame(
-    cols,
-    header=urwid.AttrWrap(header, 'head'),
-    footer=urwid.Padding(notifications, left=2, right=2)
-)
 
 
 if __name__=="__main__":
