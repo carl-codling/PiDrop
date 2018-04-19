@@ -98,7 +98,7 @@ class PiBoxDirInput(urwid.Edit):
             build_pibox_list('pibox')
 
     def rename_path(self, new_name):
-        rootlen = len(PIBOX_DIR)-1
+        rootlen = len(cfga['rootdir'])-1
         current_name = new_dir_location.split(os.sep)[-1]
         new_path = new_dir_location[:-len(current_name)] + new_name
 
@@ -175,8 +175,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
         path = self.get_node().get_value()['path']
         fname = self.get_node().get_value()['name']
-        if key == 'u':
-            print(json.dumps(collapse_cache))
+        if key in ['b', 'B']:
+            do_welcome_screen(None)
         if key in ["s", "S"]:
             self.add_to_selected(path+os.sep+fname)
 
@@ -205,7 +205,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             self.more_path_details()
              
         elif key == 'enter':
-            rootlen = len(PIBOX_DIR)
+            rootlen = len(cfga['rootdir'])
             path = self.get_node().get_value()['path']
             fname = self.get_node().get_value()['name']
             
@@ -250,7 +250,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
                     return
 
 
-        if p == PIBOX_DIR:
+        if p == cfga['rootdir']:
             notifications.set_text('Cannot add the root directory to the selected list!')
         else:
             if p in selected_files:
@@ -338,7 +338,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def move_files(self, path, fname):
         global selected_files
         global file_mode
-        rootlen = len(PIBOX_DIR)-1
+        rootlen = len(cfga['rootdir'])-1
         if os.path.isdir(path+os.sep+fname):
             p = path+os.sep+fname
         else:
@@ -381,7 +381,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def delete_files(self, path, name):
         global selected_files
         global file_mode
-        rootlen = len(PIBOX_DIR)
+        rootlen = len(cfga['rootdir'])
         nfiles = 0
         nfolders = 0
         for f in selected_files:
@@ -406,7 +406,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         global file_mode
         
         for p in selected_files:
-            dest = EXPORT_DIR + os.sep + p.split(os.sep)[-1]
+            dest = cfga['export-dir'] + os.sep + p.split(os.sep)[-1]
             if os.path.isfile(p):
                 shutil.copy2(p, dest)
             elif os.path.isdir(p):
@@ -431,7 +431,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def import_files(self, path, fname):
         global import_files
         global file_mode
-        rootlen = len(IMPORT_DIR)
+        rootlen = len(cfga['import-dir'])
         if os.path.isdir(path+os.sep+fname):
             p = path+os.sep+fname
         else:
@@ -514,7 +514,7 @@ class ImporterTreeWidget(urwid.TreeWidget):
                     return
 
 
-        if p == IMPORT_DIR:
+        if p == cfga['import-dir']:
             notifications.set_text('Cannot add the root directory to the selected list!')
         else:
             if p in import_files:
@@ -665,8 +665,8 @@ class PiboxWalker(urwid.TreeWalker):
         self.focus.get_widget().path_details()
 
 def empty_importer(i):
-    for the_file in os.listdir(IMPORT_DIR):
-        file_path = os.path.join(IMPORT_DIR, the_file)
+    for the_file in os.listdir(cfga['import-dir']):
+        file_path = os.path.join(cfga['import-dir'], the_file)
         try:
             if os.path.isfile(file_path):
                 os.unlink(file_path)
@@ -676,8 +676,8 @@ def empty_importer(i):
     build_pibox_list('importer')
 
 def empty_exporter(i):
-    for the_file in os.listdir(EXPORT_DIR):
-        file_path = os.path.join(EXPORT_DIR, the_file)
+    for the_file in os.listdir(cfga['export-dir']):
+        file_path = os.path.join(cfga['export-dir'], the_file)
         try:
             if os.path.isfile(file_path):
                 os.unlink(file_path)
@@ -727,7 +727,7 @@ def set_search(w, txt):
 def get_search_list():
     result = []
     pattern = '*'+search_term.lower()+'*'
-    for root, dirs, files in os.walk(PIBOX_DIR):
+    for root, dirs, files in os.walk(cfga['rootdir']):
         for name in files:
             if fnmatch.fnmatch(name.lower(), pattern):
                 result.append({'name':name,'path':root})
@@ -735,7 +735,7 @@ def get_search_list():
             if fnmatch.fnmatch(name.lower(), pattern):
                 result.append({'name':name,'path':root})
 
-    return {'name':'Search Results for ['+search_term+']:', 'path':PIBOX_DIR, 'children':result}
+    return {'name':'Search Results for ['+search_term+']:', 'path':cfga['rootdir'], 'children':result}
 
 def build_pibox_list(dir='*'):
     if dir in ['*', 'pibox']:
@@ -753,19 +753,19 @@ def get_pibox_listbox():
     if search_term:
         data = get_search_list()
     else:
-        data = get_pibox_dir(PIBOX_DIR)[0]
+        data = get_pibox_dir(cfga['rootdir'])[0]
     topnode = PiboxParentNode(data)
     walker = PiboxWalker(topnode)
     #urwid.connect_signal(walker, 'modified', walking)
     return  urwid.TreeListBox(walker)
 
 def get_importer_listbox():
-    data = get_pibox_dir(IMPORT_DIR)[0]
+    data = get_pibox_dir(cfga['import-dir'])[0]
     topnode = ImporterParentNode(data)
     return  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'importer')
 
 def get_exporter_listbox():
-    data = get_pibox_dir(EXPORT_DIR)[0]
+    data = get_pibox_dir(cfga['export-dir'])[0]
     topnode = ExporterParentNode(data)
     return  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'exporter')
 
@@ -813,14 +813,14 @@ def construct_properties_box():
         footer=urwid.AttrWrap(more_details_btn, 'footer')
     )
 
-def construct_right_column():
+def construct_browser_right_column():
     global right_column
     construct_importer_listbox()
     construct_exporter_listbox()
     construct_properties_box()
     right_column = urwid.AttrWrap(urwid.Pile([fdetails_container,importer_container,exporter_container]),'exporter')
 
-def construct_main_column():
+def construct_browser_main_column():
     global listbox
     global search_box
     # Main directory browser
@@ -829,7 +829,7 @@ def construct_main_column():
     search_box = PiBoxSearchInput('Search:')
     urwid.connect_signal(search_box, 'change', set_search)
 
-def construct_mainview():
+def construct_browser_mainview():
     global notifications
     global mainview
     # notifications bar
@@ -840,38 +840,14 @@ def construct_mainview():
      
     main_section = urwid.Pile([listbox,('pack',urwid.AttrWrap(search_box, 'search_box'))])
     cols = urwid.Columns([('weight', 3,main_section), right_column])
-    mainview = urwid.Frame(
+    mainview.original_widget = urwid.Frame(
         cols,
         header=urwid.AttrWrap(header, 'head'),
         footer=urwid.Padding(notifications, left=2, right=2)
     )
 
-def load_config():
-    global dir_path
-    global cfga
-    global PIBOX_DIR
-    global IMPORT_DIR
-    global EXPORT_DIR
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    with open(dir_path+'/cfg.json') as json_file:  
-            cfga = json.load(json_file)
-    PIBOX_DIR = cfga['rootdir']
-    IMPORT_DIR = cfga['import-dir']
-    EXPORT_DIR = cfga['export-dir']
-
-def dropbox_connect():
-    global dbx
-    dbx = dropbox.Dropbox(cfga['token'])
-
-def main():
-    global selected_files
-    global import_files
-    global new_dir_location
-    global search_term
-    global file_mode
-    global collapse_cache 
+def load_palette():
     global palette
-    global notif_default_text
     palette = [
         ('body', 'black', 'light gray'),
         ('header', 'white', 'dark blue'),
@@ -889,9 +865,19 @@ def main():
         ('file select focus', 'light blue', 'dark gray'),
         ('dir select', 'white', 'light green'),
         ('dir select focus', 'light green', 'dark gray'),
-        ('details', 'yellow', 'dark blue')
+        ('details', 'yellow', 'dark blue'),
+        ('error', 'light red', 'light gray')
         ]
-    notif_default_text = '[Q]uit | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
+
+def do_filebrowser(w):
+    global selected_files
+    global import_files
+    global new_dir_location
+    global search_term
+    global file_mode
+    global collapse_cache 
+    global notif_default_text
+    notif_default_text = '[Q]uit | [B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
     selected_files = []
     import_files = []
     new_dir_location = None
@@ -900,9 +886,140 @@ def main():
     collapse_cache = {}
     load_config()
     dropbox_connect()
-    construct_right_column()
-    construct_main_column()
-    construct_mainview()
+    construct_browser_right_column()
+    construct_browser_main_column()
+    construct_browser_mainview()
+
+def do_config_menu(w):
+    global config_list
+    global cfgtitle
+    global errbox
+    load_config()
+    dropbox_connect()
+    errbox = urwid.AttrWrap(urwid.Text(''),'error')
+    divider = urwid.Divider(' ')
+    cfgtitle = urwid.AttrWrap(urwid.Text('Select an option below'),'details')
+    opt_dirs = urwid.Button('Set the locations for your PiDrop directories')
+    urwid.connect_signal(opt_dirs,'click',do_config_menu_dirs)
+    opt_sync = urwid.Button('Select which Dropbox directories to sync')
+    urwid.connect_signal(opt_sync,'click',do_config_menu_sync)
+    back = urwid.Button('Back')
+    urwid.connect_signal(back,'click',do_welcome_screen)
+    config_list = urwid.AttrWrap(urwid.ListBox([opt_dirs,opt_sync,divider,back]), 'body')
+    pile = urwid.Pile([('pack',divider),('pack',cfgtitle),('pack',divider), config_list])
+    mainview.original_widget = urwid.AttrWrap(urwid.Frame(
+        urwid.Padding(pile, left=5),
+        header=urwid.AttrWrap(urwid.Text('PiDrop Config'), 'header')
+    ),'body')
+
+def do_config_menu_dirs(w):
+    global cfgb
+    divider = urwid.Divider(' ')
+    cfgb = cfga
+    root_dir = urwid.Edit('PiDrop Root Directory: ', cfgb['rootdir'])
+    urwid.connect_signal(root_dir,'change',change_dir, 'rootdir')
+    import_dir = urwid.Edit('Imports Directory: ', cfgb['import-dir'])
+    urwid.connect_signal(import_dir,'change',change_dir, 'import-dir')
+    export_dir = urwid.Edit('Exports Directory: ', cfgb['export-dir'])
+    urwid.connect_signal(export_dir,'change',change_dir, 'export-dir')
+    save = urwid.Button('Save and exit')
+    urwid.connect_signal(save,'click',config_save_dirs)
+    back = urwid.Button('Exit without saving')
+    urwid.connect_signal(back,'click',do_config_menu)
+    config_list.original_widget = urwid.ListBox([root_dir,import_dir,export_dir,errbox,save,back])
+
+
+def config_save_dirs(w):
+    if not os.path.isdir(cfgb['rootdir']):
+        errbox.set_text('\nRoot Directory is not a valid directory\n')
+    elif not os.path.isdir(cfgb['export-dir']):
+        errbox.set_text('\nExport Directory is not a valid directory\n')
+    elif not os.path.isdir(cfgb['import-dir']):
+        errbox.set_text('\nImport Directory is not a valid directory\n')
+    else:
+        update_config(cfgb)
+        do_config_menu(None)
+
+def change_dir(w, dirpath, dirname):
+    cfgb[dirname] = dirpath
+
+def do_config_menu_sync(w):
+    outlist = []
+    divider = urwid.Divider(' ')
+    remote_folders = list_remote_folders()
+    for name in remote_folders:
+        if name in cfga['folders']:
+            outlist.append(urwid.CheckBox(name, state=True, user_data=name, on_state_change=set_sync))
+        else:
+            outlist.append(urwid.CheckBox(name, state=False, user_data=name, on_state_change=set_sync))
+    back = urwid.Button('Back')
+    outlist.append(divider)
+    outlist.append(errbox)
+    urwid.connect_signal(back,'click',do_config_menu)
+    config_list.original_widget = urwid.ListBox(outlist)
+
+def set_sync(w, state, name):
+    if name in cfga['folders']:
+        if not state:
+            cfga['folders'].remove(name)
+            update_config(cfga)
+    elif state:
+        cfga['folders'].append(name)
+        update_config(cfga)
+
+def list_remote_folders():
+    try:
+        res = dbx.files_list_folder('')
+    except dropbox.exceptions.ApiError as err:
+        print('Folder listing failed', '-- assumed empty:', err)
+        return []
+    else:
+        rv = []
+        for entry in res.entries:
+            rv.append(entry.name)
+        return rv
+
+
+def do_welcome_screen(w):
+    global mainview
+    divider = urwid.Divider(' ')
+    welcome = urwid.AttrWrap(urwid.Text('Select an option below'),'details')
+    browser_btn = urwid.Button('File Browser/Manager')
+    urwid.connect_signal(browser_btn,'click',do_filebrowser)
+    config_btn  = urwid.Button('Configure PiDrop')
+    urwid.connect_signal(config_btn,'click',do_config_menu)
+    help_btn  = urwid.Button('Help')
+    options = urwid.ListBox([browser_btn,config_btn])
+    pile = urwid.Pile([('pack',divider),('pack',welcome),('pack',divider), options])
+    mainview.original_widget = urwid.AttrWrap(urwid.Frame(
+        urwid.Padding(pile, left=5),
+        header=urwid.AttrWrap(urwid.Text('Welcome'), 'header')
+    ),'body')
+
+def load_config():
+    global dir_path
+    global cfga
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    if not os.path.isfile(dir_path+'/cfg.json'):
+        update_config({"export-dir": "", "folders": [], "import-dir": "", "rootdir": "", "token": ""})
+    with open(dir_path+'/cfg.json') as json_file:  
+            cfga = json.load(json_file)
+
+def update_config(data):
+    with open(dir_path+'/cfg.json', 'w') as outfile:  
+            json.dump(data, outfile)
+    load_config()
+
+def dropbox_connect():
+    global dbx
+    dbx = dropbox.Dropbox(cfga['token'])
+
+def main():
+    global loop
+    global mainview
+    mainview = urwid.AttrWrap(urwid.Text('Loading'), 'head')
+    load_palette()
+    do_welcome_screen(None)
     loop = urwid.MainLoop(mainview, palette, unhandled_input=unhandled_input)
     loop.run()
 
