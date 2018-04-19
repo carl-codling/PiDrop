@@ -33,6 +33,8 @@ import subprocess
 
 import dropbox
 
+from themes import *
+
 
 help_text = """
         Using this interface you can move/delete/import/export files in your dropbox folder
@@ -779,10 +781,13 @@ def construct_importer_listbox():
     importer_listbox =  get_importer_listbox()
     empty_importer_button = urwid.Button('Empty Import folder')
     urwid.connect_signal(empty_importer_button, 'click', empty_importer)
+    footer = urwid.Padding(empty_importer_button, left=2, right=2)
+    footer = urwid.Pile([divider,footer,divider])
+    footer = urwid.AttrWrap(footer, 'footer')
     importer_container = urwid.Frame(
         urwid.AttrWrap(urwid.Padding(importer_listbox, left=2, right=2), 'importer'),
         header=urwid.AttrWrap(urwid.Text('Importer folder'), 'header'),
-        footer =urwid.AttrWrap(empty_importer_button, 'footer')
+        footer =urwid.AttrWrap(footer, 'footer')
     )
 
 def construct_exporter_listbox():
@@ -792,10 +797,13 @@ def construct_exporter_listbox():
     exporter_listbox =  get_exporter_listbox()
     empty_exporter_button = urwid.Button('Empty Export folder')
     urwid.connect_signal(empty_exporter_button, 'click', empty_exporter)
+    footer = urwid.Padding(empty_exporter_button, left=2, right=2)
+    footer = urwid.Pile([divider,footer,divider])
+    footer = urwid.AttrWrap(footer, 'footer')
     exporter_container = urwid.Frame(
         urwid.AttrWrap(urwid.Padding(exporter_listbox, left=2, right=2), 'exporter'),
         header=urwid.AttrWrap(urwid.Text('Exporter folder'), 'header'),
-        footer =urwid.AttrWrap(empty_exporter_button, 'footer')
+        footer =urwid.AttrWrap(footer, 'footer')
     )
 
 def construct_properties_box():
@@ -803,14 +811,17 @@ def construct_properties_box():
     global more_details
     global fdetails_container
     fdetails = urwid.Text('')
-    more_details_btn = urwid.Button('More Details')
+    more_details_btn = urwid.Button('More Properties')
     urwid.connect_signal(more_details_btn, 'click', more_details)
     more_details = urwid.Text('')
     d = urwid.AttrWrap(urwid.Padding(urwid.ListBox([fdetails,more_details]), left=2, right=2),'details')
+    footer = urwid.Padding(more_details_btn, left=2, right=2)
+    footer = urwid.Pile([divider,footer,divider])
+    footer = urwid.AttrWrap(footer, 'footer')
     fdetails_container = urwid.Frame(
         d,
         header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header'),
-        footer=urwid.AttrWrap(more_details_btn, 'footer')
+        footer=urwid.AttrWrap(footer, 'footer')
     )
 
 def construct_browser_right_column():
@@ -818,7 +829,8 @@ def construct_browser_right_column():
     construct_importer_listbox()
     construct_exporter_listbox()
     construct_properties_box()
-    right_column = urwid.AttrWrap(urwid.Pile([fdetails_container,importer_container,exporter_container]),'exporter')
+    #c = urwid.Terminal(['sudo', 'tail', '-f', '/home/pi/PiDrop/pibox.log'])
+    right_column = urwid.AttrWrap(urwid.Padding(urwid.Pile([('pack',divider),fdetails_container,importer_container,exporter_container]),right=1),'body')
 
 def construct_browser_main_column():
     global listbox
@@ -833,41 +845,33 @@ def construct_browser_mainview():
     global notifications
     global mainview
     # notifications bar
-    notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'notifications')
-
+    notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'footer')
+    footer = urwid.Pile([divider,notifications,divider])
     # primary elements
     header = urwid.AttrWrap(urwid.Text('PIBOX - manage your dropbox'), 'header')
      
-    main_section = urwid.Pile([listbox,('pack',urwid.AttrWrap(search_box, 'search_box'))])
+    main_section = urwid.Pile([
+        ('pack',divider),
+        urwid.Padding(listbox, left=1, right=1),
+        ('pack',divider),
+        ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
+    ])
     cols = urwid.Columns([('weight', 3,main_section), right_column])
     mainview.original_widget = urwid.Frame(
         cols,
         header=urwid.AttrWrap(header, 'head'),
-        footer=urwid.Padding(notifications, left=2, right=2)
+        footer=urwid.Padding(footer, left=2, right=2)
     )
 
 def load_palette():
     global palette
-    palette = [
-        ('body', 'black', 'light gray'),
-        ('header', 'white', 'dark blue'),
-        ('notifications', 'light green', 'black'),
-        ('importer', 'white', 'light blue'),
-        ('exporter', 'light blue', 'black'),
-        ('diradder', 'dark blue', 'white'),
-        ('search_box', 'dark blue', 'white'),
-        ('search_box_active', 'black', 'yellow'),
-        ('file', 'dark blue', 'light gray'),
-        ('file focus', 'dark magenta', 'white'),
-        ('dir', 'black', 'light gray'),
-        ('dir focus','light red', 'white'),
-        ('file select', 'white', 'light blue'),
-        ('file select focus', 'light blue', 'dark gray'),
-        ('dir select', 'white', 'light green'),
-        ('dir select focus', 'light green', 'dark gray'),
-        ('details', 'yellow', 'dark blue'),
-        ('error', 'light red', 'light gray')
-        ]
+    global palettes
+    global divider
+    divider = urwid.Divider(' ')
+
+    if 'palette' in cfga:
+        palette = palettes[cfga['palette']]
+    else: palette = palettes['light']
 
 def do_filebrowser(w):
     global selected_files
@@ -884,7 +888,6 @@ def do_filebrowser(w):
     search_term = None
     file_mode = None
     collapse_cache = {}
-    load_config()
     dropbox_connect()
     construct_browser_right_column()
     construct_browser_main_column()
@@ -894,27 +897,26 @@ def do_config_menu(w):
     global config_list
     global cfgtitle
     global errbox
-    load_config()
     dropbox_connect()
     errbox = urwid.AttrWrap(urwid.Text(''),'error')
-    divider = urwid.Divider(' ')
     cfgtitle = urwid.AttrWrap(urwid.Text('Select an option below'),'details')
     opt_dirs = urwid.Button('Set the locations for your PiDrop directories')
     urwid.connect_signal(opt_dirs,'click',do_config_menu_dirs)
     opt_sync = urwid.Button('Select which Dropbox directories to sync')
     urwid.connect_signal(opt_sync,'click',do_config_menu_sync)
+    opt_theme = urwid.Button('Select a theme')
+    urwid.connect_signal(opt_theme,'click',do_config_menu_theme)
     back = urwid.Button('Back')
     urwid.connect_signal(back,'click',do_welcome_screen)
-    config_list = urwid.AttrWrap(urwid.ListBox([opt_dirs,opt_sync,divider,back]), 'body')
+    config_list = urwid.AttrWrap(urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_theme),divider,style_btn(back)]), 'body')
     pile = urwid.Pile([('pack',divider),('pack',cfgtitle),('pack',divider), config_list])
     mainview.original_widget = urwid.AttrWrap(urwid.Frame(
-        urwid.Padding(pile, left=5),
+        urwid.Padding(pile, left=5, right=5, width=('relative',40)),
         header=urwid.AttrWrap(urwid.Text('PiDrop Config'), 'header')
     ),'body')
 
 def do_config_menu_dirs(w):
     global cfgb
-    divider = urwid.Divider(' ')
     cfgb = cfga
     root_dir = urwid.Edit('PiDrop Root Directory: ', cfgb['rootdir'])
     urwid.connect_signal(root_dir,'change',change_dir, 'rootdir')
@@ -926,7 +928,13 @@ def do_config_menu_dirs(w):
     urwid.connect_signal(save,'click',config_save_dirs)
     back = urwid.Button('Exit without saving')
     urwid.connect_signal(back,'click',do_config_menu)
-    config_list.original_widget = urwid.ListBox([root_dir,import_dir,export_dir,errbox,save,back])
+    cfg_menu = [root_dir,import_dir,export_dir,errbox]
+    cfg_menu.append(style_btn(save))
+    cfg_menu.append(style_btn(back))
+    config_list.original_widget = urwid.ListBox(cfg_menu)
+
+def style_btn(btn):
+    return urwid.AttrWrap(btn,'button', 'button focus')
 
 
 def config_save_dirs(w):
@@ -945,7 +953,6 @@ def change_dir(w, dirpath, dirname):
 
 def do_config_menu_sync(w):
     outlist = []
-    divider = urwid.Divider(' ')
     remote_folders = list_remote_folders()
     for name in remote_folders:
         if name in cfga['folders']:
@@ -955,8 +962,33 @@ def do_config_menu_sync(w):
     back = urwid.Button('Back')
     outlist.append(divider)
     outlist.append(errbox)
+    outlist.append(style_btn(back))
     urwid.connect_signal(back,'click',do_config_menu)
     config_list.original_widget = urwid.ListBox(outlist)
+
+def do_config_menu_theme(w):
+    outlist = []
+    opts = ['light','dark','system defaults']
+    if 'palette' in cfga:
+        p = cfga['palette']
+    else: p = 'light'
+    for name in opts:
+        if name == p:
+            outlist.append(urwid.CheckBox(name, state=True, user_data=name, on_state_change=set_theme))
+        else:
+            outlist.append(urwid.CheckBox(name, state=False, user_data=name, on_state_change=set_theme))
+    back = urwid.Button('Back')
+    outlist.append(divider)
+    outlist.append(style_btn(back))
+    urwid.connect_signal(back,'click',do_config_menu)
+    config_list.original_widget = urwid.ListBox(outlist)
+
+def set_theme(w, state, name):
+    cfga['palette'] = name
+    do_config_menu_theme(None)
+    update_config(cfga)
+    loop.screen.register_palette(palettes[name])
+    loop.screen.clear()
 
 def set_sync(w, state, name):
     if name in cfga['folders']:
@@ -982,17 +1014,16 @@ def list_remote_folders():
 
 def do_welcome_screen(w):
     global mainview
-    divider = urwid.Divider(' ')
     welcome = urwid.AttrWrap(urwid.Text('Select an option below'),'details')
     browser_btn = urwid.Button('File Browser/Manager')
     urwid.connect_signal(browser_btn,'click',do_filebrowser)
     config_btn  = urwid.Button('Configure PiDrop')
     urwid.connect_signal(config_btn,'click',do_config_menu)
     help_btn  = urwid.Button('Help')
-    options = urwid.ListBox([browser_btn,config_btn])
+    options = urwid.ListBox([style_btn(browser_btn),style_btn(config_btn)])
     pile = urwid.Pile([('pack',divider),('pack',welcome),('pack',divider), options])
     mainview.original_widget = urwid.AttrWrap(urwid.Frame(
-        urwid.Padding(pile, left=5),
+        urwid.Padding(pile, left=5, right=5, width=('relative',40)),
         header=urwid.AttrWrap(urwid.Text('Welcome'), 'header')
     ),'body')
 
@@ -1017,7 +1048,8 @@ def dropbox_connect():
 def main():
     global loop
     global mainview
-    mainview = urwid.AttrWrap(urwid.Text('Loading'), 'head')
+    mainview = urwid.AttrWrap(urwid.Text('Loading'), 'body')
+    load_config()
     load_palette()
     do_welcome_screen(None)
     loop = urwid.MainLoop(mainview, palette, unhandled_input=unhandled_input)
