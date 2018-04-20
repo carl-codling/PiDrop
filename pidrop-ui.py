@@ -34,33 +34,8 @@ import subprocess
 import dropbox
 
 from themes import *
+from pidrop_help import *
 
-
-help_text = """
-        Using this interface you can move/delete/import/export files in your dropbox folder
-        ====================================================================================
-
-            To Move, Delete or Export:
-            -------------------------
-            1) Navigate to some files in the main directory browser and press [s] to 
-               select/deselect any files
-            2) With some files/folders selected you can then either:
-                a) Move the files: Select the location to move to then press [m]. You will 
-                   be asked to press [enter] to confirm.
-                b) Delete the files: Press [d]. You will be asked to press [enter] to 
-                   confirm.
-                c) Send files to the export folder: Press [e]. You will be asked to press 
-                   [enter] to confirm.
-
-            To Import:
-            --------------------------
-            1) Select/deselect files in Import folder browser (top right) using the [s] key
-            2) Focus (place the cursor on) the target directory in the main directory browser
-            3) Press [i] to import. You will be asked to press [enter] to confirm.
-
----------------------------------------------------------------------------------------------
-
-"""
 
 class PiBoxSearchInput(urwid.Edit):
 
@@ -194,7 +169,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             self.confirm_export_files()
         
         elif key in ['h','H']:
-            keys.set_text(help_text)
+            do_help_menu(None)
 
         elif key in ["i", "I"]:
             self.confirm_import_files()
@@ -619,6 +594,76 @@ class PiboxParentNode(urwid.ParentNode):
 
         return childclass(childdata, parent=self, key=key, depth=childdepth)
 
+
+class HelpParentNode(urwid.ParentNode):
+    def load_widget(self):
+        return HelpTreeWidget(self)
+
+    def load_child_keys(self):
+        data = self.get_value()
+        if 'children' in data:
+            return range(len(data['children']))
+        else: return []
+
+    def load_child_node(self, key):
+        """Return either an PiboxNode or PiboxParentNode"""
+        childdata = self.get_value()['children'][key]
+        childdepth = self.get_depth() + 1
+        if 'children' in childdata:
+            childclass = HelpParentNode
+        else:
+            childclass = HelpNode
+
+        return childclass(childdata, parent=self, key=key, depth=childdepth)
+
+class HelpNode(urwid.TreeNode):
+    """ Data storage object for leaf nodes """
+    def load_widget(self):
+        return HelpTreeWidget(self)
+
+class HelpTreeWidget(urwid.TreeWidget):
+    """ Display widget for leaf nodes """
+    unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
+    expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
+    def __init__(self, node):
+        self.__super.__init__(node)
+        self._w = urwid.AttrWrap(self._w, None)
+        val = self.get_node().get_value()
+        if self.get_node().get_depth() > 0:
+            self.expanded = False
+        if 'children' in val:
+            self.update_expanded_icon()
+        if 'answer' in val:
+            self._w.attr = 'file'
+            self._w.focus_attr = 'file focus'
+        else:
+            self._w.attr = 'dir'
+            self._w.focus_attr = 'dir focus'
+
+    def get_display_text(self):
+        val = self.get_node().get_value()
+        if 'answer' in val:
+            return val['answer']
+        return val['name']
+
+    def selectable(self):
+        return True
+
+    def keypress(self, size, key):
+        key = self.__super.keypress(size, key)
+        if key:
+            key = self.unhandled_keys(size, key)
+        return key
+
+    def unhandled_keys(self, size, key):
+        if key in ['b', 'B']:
+            do_welcome_screen(None)
+        if key in ["f", "F"]:
+            do_filebrowser(None)
+        else:
+            return key
+
+
 class ImporterParentNode(urwid.ParentNode):
     """ Data storage object for interior/parent nodes """
     def load_widget(self):
@@ -669,6 +714,25 @@ class PiboxWalker(urwid.TreeWalker):
         urwid.connect_signal(self, 'modified', self.walking)
     def walking(self):
         self.focus.get_widget().path_details()
+
+class MainContainer(urwid.Pile):
+    def keypress(self, size, key):
+        key = self.__super.keypress(size, key)
+        if key:
+            key = self.unhandled_keys(size, key)
+        return key
+
+    def unhandled_keys(self, size, key):
+        if key in ['b', 'B']:
+            do_welcome_screen(None)
+        if key in ["f", "F"]:
+            do_filebrowser(None)
+        if key in ["c", "C"]:
+            do_config_menu(None)
+        if key in ["h", "H"]:
+            do_help_menu(None)
+        else:
+            return key
 
 def empty_importer(i):
     for the_file in os.listdir(cfga['import-dir']):
@@ -844,7 +908,7 @@ def construct_browser_right_column():
     construct_exporter_listbox()
     construct_properties_box()
     #c = urwid.Terminal(['sudo', 'tail', '-f', '/home/pi/PiDrop/pibox.log'])
-    right_column = urwid.AttrWrap(urwid.Padding(urwid.Pile([('pack',divider),fdetails_container,importer_container,exporter_container]),right=1),'body')
+    right_column = urwid.AttrWrap(urwid.Padding(urwid.Pile([('pack',divider),urwid.LineBox(fdetails_container),urwid.LineBox(importer_container),urwid.LineBox(exporter_container)]),right=1),'body')
 
 def construct_browser_main_column():
     global listbox
@@ -898,7 +962,7 @@ def do_filebrowser(w):
     global file_mode
     global collapse_cache 
     global keys_default_text
-    keys_default_text = '[Q]uit | [B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
+    keys_default_text = '[B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp | [Q]uit'
     selected_files = []
     import_files = []
     new_dir_location = None
@@ -915,6 +979,9 @@ def do_config_menu(w):
     global cfgtitle
     global errbox
     dropbox_connect()
+    footer = urwid.AttrWrap(urwid.Text('[B]ack to main menu | [F]ile browser | [H]elp | [Q]uit'), 'footer')
+    footer = urwid.Pile([divider,footer,divider])
+    footer = urwid.Padding(footer, left=2, right=2)
     errbox = urwid.AttrWrap(urwid.Text(''),'error')
     cfgtitle = urwid.AttrWrap(urwid.Text('Select an option below'),'details')
     opt_dirs = urwid.Button('Set the locations for your PiDrop directories')
@@ -926,10 +993,11 @@ def do_config_menu(w):
     back = urwid.Button('Back')
     urwid.connect_signal(back,'click',do_welcome_screen)
     config_list = urwid.AttrWrap(urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_theme),divider,style_btn(back)]), 'body')
-    pile = urwid.Pile([('pack',divider),('pack',cfgtitle),('pack',divider), config_list])
+    pile = MainContainer([('pack',divider),('pack',cfgtitle),('pack',divider), config_list])
     mainview.original_widget = urwid.AttrWrap(urwid.Frame(
         urwid.Padding(pile, left=5, right=5, width=('relative',40)),
-        header=urwid.AttrWrap(urwid.Text('PiDrop Config'), 'header')
+        header=urwid.AttrWrap(urwid.Text('PiDrop Config'), 'header'),
+        footer=footer
     ),'body')
 
 def do_config_menu_dirs(w):
@@ -1029,18 +1097,42 @@ def list_remote_folders():
         return rv
 
 
+def do_help_menu(w):
+    footer = urwid.AttrWrap(urwid.Text('[B]ack to main menu | [F]ile browser | [C]onfig | [Q]uit'), 'footer')
+    footer = urwid.Pile([divider,footer,divider])
+    footer = urwid.Padding(footer, left=2, right=2)
+    data = help_questions
+    topnode = HelpParentNode(data)
+    helplist = urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
+    nfo = urwid.LineBox(urwid.Text("""
+        Welcome to the help menu. 
+        -------------------------
+        Use your mouse or the arrow keys on your keyboard to navigate through though question/answer list below.
+
+        Throughout this UI you will find a list of available keys for the current screen in the footer."""))
+    pile = MainContainer([('pack',divider),('pack',nfo),('pack',divider), helplist])
+    mainview.original_widget = urwid.AttrWrap(urwid.Frame(
+        urwid.Padding(pile, left=2,right=2),
+        header=urwid.AttrWrap(urwid.Text('PiDrop Help Menu'), 'header'),
+        footer=footer
+    ),'body')
+
+def show_help_item(w,a):
+    help_item.set_text(a)
+
 def do_welcome_screen(w):
     global mainview
-    welcome = urwid.AttrWrap(urwid.Text('Select an option below'),'details')
-    browser_btn = urwid.Button('File Browser/Manager')
+    welcome = urwid.AttrWrap(urwid.LineBox(urwid.Text('Select an option below by either clicking the option or pressing the associated key')),'details')
+    browser_btn = urwid.Button('[F]ile Browser/Manager')
     urwid.connect_signal(browser_btn,'click',do_filebrowser)
-    config_btn  = urwid.Button('Configure PiDrop')
+    config_btn  = urwid.Button('[C]onfigure PiDrop')
     urwid.connect_signal(config_btn,'click',do_config_menu)
-    help_btn  = urwid.Button('Help')
-    options = urwid.ListBox([style_btn(browser_btn),style_btn(config_btn)])
-    pile = urwid.Pile([('pack',divider),('pack',welcome),('pack',divider), options])
+    help_btn  = urwid.Button('[H]elp')
+    urwid.connect_signal(help_btn,'click',do_help_menu)
+    options = urwid.ListBox([style_btn(browser_btn),style_btn(config_btn),style_btn(help_btn)])
+    pile = urwid.Filler(MainContainer([('pack',divider),('pack',welcome),('pack',divider), options]), height=10)
     mainview.original_widget = urwid.AttrWrap(urwid.Frame(
-        urwid.Padding(pile, left=5, right=5, width=('relative',40)),
+        urwid.Padding(pile, left=5, right=5, width=('relative',40), align='center'),
         header=urwid.AttrWrap(urwid.Text('Welcome'), 'header')
     ),'body')
 
