@@ -70,7 +70,7 @@ class PiBoxSearchInput(urwid.Edit):
             build_pibox_list('pibox')
             self.set_edit_text('')
         elif key == 'esc':
-            notifications.set_text(notif_default_text)
+            keys.set_text(keys_default_text)
             build_pibox_list()
 
 class PiBoxDirInput(urwid.Edit):
@@ -84,7 +84,8 @@ class PiBoxDirInput(urwid.Edit):
 
             if file_mode == 'new_dir' and len(dirname) > 0:
                 os.mkdir(new_dir_location+os.sep+dirname)
-                notifications.set_text('New directory "'+dirname+'" created at: '+new_dir_location+'\n'+notif_default_text)
+                notify('New directory %s created at %s' % (dirname,new_dir_location), 'success')
+                keys.set_text(keys_default_text)
             
             elif file_mode == 'rename':
                 self.rename_path(dirname)
@@ -96,7 +97,7 @@ class PiBoxDirInput(urwid.Edit):
         elif key == 'esc':
             file_mode = None
             new_dir_location = None
-            notifications.set_text(notif_default_text)
+            keys.set_text(keys_default_text)
             build_pibox_list('pibox')
 
     def rename_path(self, new_name):
@@ -108,17 +109,18 @@ class PiBoxDirInput(urwid.Edit):
             res = dbx.files_move(
                 new_dir_location[rootlen:], new_path[rootlen:])
         except dropbox.exceptions.ApiError as err:
-            print('*** API error', err)
+            notify('*** API error: %s' % (str(err)), 'error')
+            keys.set_text(keys_default_text)
             return None
         os.rename(new_dir_location, new_path)
-        notifications.set_text(new_dir_location[rootlen:]+ ' > renamed to > '+new_path[rootlen:])
+        notify('%s > renamed to > %s' % (new_dir_location[rootlen:],new_path[rootlen:]),'success')
+        keys.set_text(keys_default_text)
 
 class PiboxTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
     def __init__(self, node):
-        #print(node.get_value())
         self.__super.__init__(node)
         path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         self._w = urwid.AttrWrap(self._w, None)
@@ -192,7 +194,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             self.confirm_export_files()
         
         elif key in ['h','H']:
-            notifications.set_text(help_text)
+            keys.set_text(help_text)
 
         elif key in ["i", "I"]:
             self.confirm_import_files()
@@ -225,7 +227,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             
         elif key == 'esc':
             selected_files = []
-            notifications.set_text(notif_default_text)
+            keys.set_text(keys_default_text)
             file_mode = None
             build_pibox_list() 
 
@@ -241,19 +243,19 @@ class PiboxTreeWidget(urwid.TreeWidget):
         for part in parts:
             jparts += os.sep+part
             if jparts in selected_files and jparts != p:
-                notifications.set_text('A higher level parent directory is already in the list')
+                notify('A higher level parent directory is already in the list', 'error')
                 return
 
         # Check that we're not adding a folder that already has child nodes in the list
         if os.path.isdir(p):
             for s in filter (lambda x: p in x, selected_files):
                 if s != p:
-                    notifications.set_text('To add this whole directory you first need to deselect any child nodes')
+                    notify('To add this whole directory you first need to deselect any child nodes', 'error')
                     return
 
 
         if p == cfga['rootdir']:
-            notifications.set_text('Cannot add the root directory to the selected list!')
+            notify('Cannot add the root directory to the selected list!', 'error')
         else:
             if p in selected_files:
                 selected_files.remove(p)
@@ -263,9 +265,9 @@ class PiboxTreeWidget(urwid.TreeWidget):
                     self.expanded = False
                     self.update_expanded_icon()
             if len(selected_files) > 0:
-                notifications.set_text('[m]ove selected files | [d]elete selected files | [e]xport selected files')
+                keys.set_text('[M]ove selected files | [D]elete selected files | [E]xport selected files | [esc] Cancel')
             else:
-                notifications.set_text(notif_default_text)
+                keys.set_text(keys_default_text)
         self.set_style()
 
     def confirm_move_files(self):
@@ -273,10 +275,10 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
         if len(selected_files) > 0:
             file_mode = 'move'
-            notifications.set_text('Press [ENTER] to confirm moving the selected files to this location')
+            keys.set_text('Press [ENTER] to confirm moving the selected files to this location')
         else:
             file_mode = None
-            notifications.set_text('No files selected!\n'+notif_default_text)
+            notify('No files selected!', 'error')
 
     def confirm_del_files(self):
         global file_mode
@@ -284,7 +286,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             fpath = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
             self.add_to_selected(fpath)
         file_mode = 'delete'
-        notifications.set_text('Press [ENTER] to confirm deletion of the selected files')
+        keys.set_text('Press [ENTER] to confirm deletion of the selected files')
 
     def confirm_export_files(self):
         global file_mode
@@ -292,16 +294,16 @@ class PiboxTreeWidget(urwid.TreeWidget):
             fpath = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
             self.add_to_selected(fpath)
         file_mode = 'export'
-        notifications.set_text('Press [ENTER] to confirm copying the selected files to the export folder')
+        keys.set_text('Press [ENTER] to confirm copying the selected files to the export folder')
 
     def confirm_import_files(self):
         global file_mode
         if len(import_files) > 0:
             file_mode = 'import'
-            notifications.set_text('Press [ENTER] to confirm copying the selected files from the imports folder to here.')
+            keys.set_text('Press [ENTER] to confirm copying the selected files from the imports folder to here.')
         else:
             file_mode = None
-            notifications.set_text('No files selected!\n'+notif_default_text)
+            notify('No files selected!', 'error')
     
     def path_details(self):
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
@@ -353,7 +355,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
                     f[rootlen:], newp[rootlen:],
                     autorename=True)
             except dropbox.exceptions.ApiError as err:
-                print('*** API error', err)
+                notify('*** API error: %s' % (str(err)))
                 return None
             os.rename(f, newp)
             i+=1
@@ -365,7 +367,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
         f.close()
 
         build_pibox_list()  
-        notifications.set_text(str(i) + ' Selected files were moved.\n'+notif_default_text)
+        notify('%d Selected files were moved.' % (i), 'success')
+        keys.set_text(keys_default_text)
         selected_files = []
         file_mode = None
     
@@ -373,12 +376,12 @@ class PiboxTreeWidget(urwid.TreeWidget):
         global new_dir_location
         global file_mode
         if self.get_node().get_depth() < 1:
-            notifications.set_text('Cannot rename this folder from here')
+            notify('Cannot rename the root folder from here','error')
             return
         new_dir_location = path+os.sep+fname
         file_mode = 'rename'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('Rename '+fname+' to:\n'), 'search_box_active')])), 'body')
-        notifications.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
+        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('Rename %s to:\n' % (fname)), 'search_box_active')])), 'body')
+        keys.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def delete_files(self, path, name):
         global selected_files
@@ -390,7 +393,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             try:
                 dbx.files_delete_v2(os.sep+f[rootlen:])
             except dropbox.exceptions.ApiError as err:
-                    print('*** API error', err)
+                    notify('*** API error: %s' % (str(err)) , 'error')
                     return None
             if os.path.isdir(f):
                 shutil.rmtree(f)
@@ -398,7 +401,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
             else:
                 os.remove(f)
                 nfiles +=1
-        notifications.set_text(str(nfiles)+' files and '+str(nfolders)+' folders have been deleted.\n'+notif_default_text)
+        notify('%d files and %d folders have been deleted.' % (nfiles,nfolders), 'success')
+        keys.set_text(keys_default_text)
         selected_files = []
         file_mode = None
         build_pibox_list('pibox')
@@ -424,10 +428,11 @@ class PiboxTreeWidget(urwid.TreeWidget):
                             try:
                                 shutil.copy2(oldLoc, newLoc)
                             except IOError:
-                                notifications.set_text('file "' + f + '" already exists')
+                                notify('file %f already exists' % (f), 'error')
         selected_files = []
         file_mode = None
-        notifications.set_text(str('files have been exported.\n'+notif_default_text))
+        notify('files have been exported.', 'success')
+        keys.set_text(keys_default_text)
         build_pibox_list() 
 
     def import_files(self, path, fname):
@@ -444,7 +449,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
             os.rename(f, newp)
             i+=1
         build_pibox_list()  
-        notifications.set_text(str(i) + ' Selected files and folders were imported.\n'+notif_default_text)
+        notify('%d Selected files and folders were imported.' % (i), 'success')
+        keys.set_text(keys_default_text)
         import_files = []
         file_mode = None
 
@@ -457,7 +463,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             new_dir_location = path
         file_mode = 'new_dir'
         listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('New directory name:\n'), 'search_box_active')])), 'body')
-        notifications.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
+        keys.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
 class ImporterTreeWidget(urwid.TreeWidget):
@@ -465,7 +471,6 @@ class ImporterTreeWidget(urwid.TreeWidget):
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
     def __init__(self, node):
-        #print(node.get_value())
         self.__super.__init__(node)
         path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         if os.path.isdir(path) and 'children' in self.get_node().get_value():
@@ -505,19 +510,19 @@ class ImporterTreeWidget(urwid.TreeWidget):
         for part in parts:
             jparts += os.sep+part
             if jparts in import_files and jparts != p:
-                notifications.set_text('A higher level parent directory is already in the list')
+                notify('A higher level parent directory is already in the list', 'error')
                 return
 
         # Check that we're not adding a folder that already has child nodes in the list
         if os.path.isdir(p):
             for s in filter (lambda x: p in x, import_files):
                 if s != p:
-                    notifications.set_text('To add this whole directory you first need to deselect any child nodes')
+                    notify('To add this whole directory you first need to deselect any child nodes', 'error')
                     return
 
 
         if p == cfga['import-dir']:
-            notifications.set_text('Cannot add the root directory to the selected list!')
+            notify('Cannot add the root directory to the selected list!', 'error')
         else:
             if p in import_files:
                 import_files.remove(p)
@@ -532,10 +537,10 @@ class ImporterTreeWidget(urwid.TreeWidget):
                     self.update_expanded_icon()
             if len(import_files) > 0:
                 file_mode = 'import'
-                notifications.set_text('Focus a directory in the main director browser and press [i] to import the files there.')
+                keys.set_text('Focus a directory in the main director browser and press [i] to import the files there.')
             else:
                 file_mode = None
-                notifications.set_text(notif_default_text)
+                keys.set_text(keys_default_text)
 
 
 class ExporterTreeWidget(urwid.TreeWidget):
@@ -543,7 +548,6 @@ class ExporterTreeWidget(urwid.TreeWidget):
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
     def __init__(self, node):
-        #print(node.get_value())
         self.__super.__init__(node)
         path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         if os.path.isdir(path) and 'children' in self.get_node().get_value():
@@ -674,7 +678,7 @@ def empty_importer(i):
                 os.unlink(file_path)
             elif os.path.isdir(file_path): shutil.rmtree(file_path)
         except Exception as e:
-            print(e) 
+            notify(str(e), 'error') 
     build_pibox_list('importer')
 
 def empty_exporter(i):
@@ -685,7 +689,7 @@ def empty_exporter(i):
                 os.unlink(file_path)
             elif os.path.isdir(file_path): shutil.rmtree(file_path)
         except Exception as e:
-            print(e) 
+            notify(str(e), 'error') 
     build_pibox_list('exporter')
 
 def unhandled_input(k):
@@ -718,6 +722,16 @@ def format_pibox_dir(dir, path):
             o['children']  = children
         out.append(o)
     return out
+
+def notify(msg, attr='notif'):
+    close = urwid.Button('X')
+    urwid.connect_signal(close, 'click', clear_notify)
+    outp = urwid.Padding(urwid.Text('\n%s\n' % (msg)),left=2,right=2)
+    cols = urwid.AttrWrap(urwid.Columns([outp, (5, close)]),attr)
+    messages.original_widget = cols
+
+def clear_notify(w):
+    messages.original_widget = urwid.AttrWrap(urwid.Text(''), 'body')
 
 def set_search(w, txt):
     global search_term
@@ -842,16 +856,19 @@ def construct_browser_main_column():
     urwid.connect_signal(search_box, 'change', set_search)
 
 def construct_browser_mainview():
-    global notifications
+    global keys
     global mainview
+    global messages
     # notifications bar
-    notifications = urwid.AttrWrap(urwid.Text(notif_default_text), 'footer')
-    footer = urwid.Pile([divider,notifications,divider])
+    keys = urwid.AttrWrap(urwid.Text(keys_default_text), 'footer')
+    footer = urwid.Pile([divider,keys,divider])
     # primary elements
     header = urwid.AttrWrap(urwid.Text('PIBOX - manage your dropbox'), 'header')
+
+    messages = urwid.AttrWrap(urwid.Text(''), 'body')
      
     main_section = urwid.Pile([
-        ('pack',divider),
+        ('pack',messages),
         urwid.Padding(listbox, left=1, right=1),
         ('pack',divider),
         ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
@@ -880,8 +897,8 @@ def do_filebrowser(w):
     global search_term
     global file_mode
     global collapse_cache 
-    global notif_default_text
-    notif_default_text = '[Q]uit | [B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
+    global keys_default_text
+    keys_default_text = '[Q]uit | [B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp'
     selected_files = []
     import_files = []
     new_dir_location = None
@@ -1003,7 +1020,7 @@ def list_remote_folders():
     try:
         res = dbx.files_list_folder('')
     except dropbox.exceptions.ApiError as err:
-        print('Folder listing failed', '-- assumed empty:', err)
+        notify('Folder listing failed -- assumed empty: %s' % str(err))
         return []
     else:
         rv = []

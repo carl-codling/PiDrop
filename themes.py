@@ -20,12 +20,13 @@ palettes = {
             ('dir select focus', 'light green', 'dark gray'),
             ('details', 'yellow', 'dark blue'),
             ('error', 'light red', 'light gray'),
+            ('success', 'light green', 'white'),
             ('button', 'dark blue', 'light gray'),
             ('button focus', 'light blue', 'white')
         ],
         'dark':[
             ('body', 'light gray', 'black'),
-            ('header', 'white', 'dark blue'),
+            ('header', 'white', 'dark magenta'),
             ('footer', 'light green', 'black'),
             ('importer', 'white', 'dark blue'),
             ('exporter', 'white', 'dark blue'),
@@ -42,8 +43,9 @@ palettes = {
             ('dir select focus', 'dark gray', 'light green'),
             ('details', 'yellow', 'dark blue'),
             ('error', 'light red', 'black'),
+            ('success', 'black', 'light green'),
             ('button', 'light gray', 'dark blue'),
-            ('button focus', 'white', 'light blue')
+            ('button focus', 'dark magenta', 'white')
         ],
         'system defaults':[
             ('body', 'default', 'default'),
@@ -64,6 +66,7 @@ palettes = {
             ('dir select focus', 'default,bold,underline', 'default'),
             ('details', 'default', 'default'),
             ('error', 'default', 'default'),
+            ('success', 'default,bold', 'default'),
             ('button', 'default', 'default'),
             ('button focus', 'default', 'default')
         ]
