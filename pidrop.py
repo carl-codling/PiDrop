@@ -13,10 +13,6 @@ __/\\\\\\\\\\\\\__________/\\\\\\\\\\\\_________________________________________
        _\/\\\_____________\/\\\_\/\\\\\\\\\\\\/___\/\\\__________\///\\\\\/___\/\\\_________ 
         _\///______________\///__\////////////_____\///_____________\/////_____\///__________
 
-                     | |__   _  _    | |/ /  __ _  (_) | |  __ _   ___ | |_  
-                     | '_ \ | || |   | ' <  / _` | | | | | / _` | (_-< | ' \ 
-                     |_.__/  \_, |   |_|\_\ \__,_| |_| |_| \__,_| /__/ |_||_|
-                             |__/                                            
 ===========================================================================                                                           
 
 """
@@ -27,6 +23,7 @@ import argparse
 import contextlib
 import datetime
 import os
+import shutil
 import six
 import sys
 import time
@@ -46,6 +43,12 @@ parser.add_argument('funct', nargs='?', default='main',
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
 def main():
+    global cfga
+    global rootdir
+    global path_list
+
+    path_list = {}
+
     open(dir_path+"/pibox.log", 'w').close()
     dblog('program started in '+dir_path)
     args = parser.parse_args()
@@ -58,71 +61,33 @@ def main():
     with open(dir_path+'/cfg.json') as json_file:  
         cfga = json.load(json_file)
 
-    rootdir = os.path.expanduser(cfga['rootdir'])
+    rootdir = cfga['rootdir'].rstrip('/')
     
-    dbx = connect_dbx(cfga['token'])
+    connect_dbx()
 
     if args.funct == 'cfg':
         piboxd()
         format_outp('Type "help" for a list of commands', 'blue')
         return cfg(dbx, cfga)
-    elif args.funct == 'explore':
-        return explore(dbx, cfga)
 
     with open(dir_path+'/flist.json') as json_file:  
         flist = json.load(json_file)
 
     for folder in cfga['folders']:
-        scan_remote_folder(dbx, folder, flist)
-        upload_new(dbx, rootdir, folder, flist)
+        # scan_remote_folder(dbx, folder, flist)
+        # upload_new(dbx, rootdir, folder, flist)
+        syncbox(folder)
 
-    with open(dir_path+'/flist.json', 'w') as outfile:  
-        json.dump(flist, outfile)
-
-    fetch_if_not_in_local(dbx, flist, rootdir)
     dblog('END')
     return
 
-def connect_dbx(token):
-    dbx = dropbox.Dropbox(token)
+def connect_dbx():
+    global dbx
+    dbx = dropbox.Dropbox(cfga['token'])
     try:
         dbx.users_get_current_account()
     except AuthError as err:
         sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
-    return dbx
-
-def explore(dbx, cfga):
-    with open(dir_path+'/flist.json') as json_file:  
-        choices = json.load(json_file)
-    def menu(title, choices):
-        body = [urwid.Text(title), urwid.Divider()]
-        for c in choices:
-            button = urwid.Button(c)
-            urwid.connect_signal(button, 'click', submenu, c)
-            body.append(urwid.AttrMap(button, None, focus_map='reversed'))
-        return urwid.ListBox(urwid.SimpleFocusListWalker(body))
-
-    def item_chosen(button, choice):
-        response = urwid.Text([u'You chose ', choice, u'\n'])
-        done = urwid.Button(u'Ok')
-        urwid.connect_signal(done, 'click', exit_program)
-        main.original_widget = urwid.Filler(urwid.Pile([response,
-            urwid.AttrMap(done, None, focus_map='reversed')]))
-    def submenu(button, c):
-        main.original_widget = urwid.Padding(menu(u'Directory Browser - '+c, choices[c]), left=2, right=2)
-
-    def exit_on_q(key):
-        if key in ('q', 'Q'):
-            raise urwid.ExitMainLoop()
-
-    main = urwid.Padding(menu(u'Directory Browser', cfga['folders']), left=2, right=2)
-    top = urwid.Overlay(main, urwid.SolidFill(u'\N{MEDIUM SHADE}'),
-        align='center', width=('relative', 60),
-        valign='middle', height=('relative', 60),
-        min_width=20, min_height=9)
-    urwid.MainLoop(top, palette=[('reversed', 'standout', '')],  unhandled_input=exit_on_q).run()
-    
-
 
 def setup():
     cfga = {'folders':[]}
@@ -275,7 +240,7 @@ def format_outp(msg, case='hl'):
         fmt = '32;1'
     elif case == 'fail':
         fmt = '31;1'
-    os.system('echo "\e['+fmt+'m'+str(msg)+' \e[0m\r"')
+    os.system('echo "\e[%sm%s \e[0m\r"' % (fmt, str(msg)))
 
 
 def dblog(msg):
@@ -283,82 +248,201 @@ def dblog(msg):
     pmsg = '[ %s ] : %s \r\n' % (str(datetime.datetime.now()), msg.encode('utf-8'))
     f.write(pmsg)
     f.close()
+    print(msg)
 
-def scan_remote_folder(dbx, folder, flist):
-    dblog('fetching remote folder: '+folder)
-    listing = list_folder(dbx, folder)
-    dblog('recieved: '+folder)
+
+def syncbox(folder):
+    """
+    Get all synced folder data from dropbox and 
+    run checks to see if it needs updating
+    """
+    listing = list_folder(folder)
     for name,f in listing.items():
         dblog('scanning :' + name)
         if isinstance(f, dropbox.files.FileMetadata):
-            dblog('is FILE: '+folder + '/' + name)
-            if folder not in flist:
-                flist[folder] = {}
-            flist[folder][name] = {
-                'size':listing[name].size,
-                'upd':str(listing[name].client_modified)
-            }
+            if not is_file_synced(listing[name]):
+                dblog(name+': file not synced')
+                sync_file(listing[name])
+
         elif isinstance(f, dropbox.files.FolderMetadata):
-            dblog('is FOLDER: ' + folder + '/' + name)
+            if not is_dir_in_local(listing[name]):
+                dblog(name+': dir not in local')
+                sync_folder(listing[name])
 
-            scan_remote_folder(dbx, folder+'/'+name, flist)
+
+        elif isinstance(f, dropbox.files.DeletedMetadata):
+            dblog(name+': is in the delete list')
+            sync_deleted(listing[name])
+    sync_local(folder)
 
 
-def list_folder(dbx, folder, subfolder=''):
-    """List a folder.
-
-    Return a dict mapping unicode filenames to
-    FileMetadata|FolderMetadata entries.
+def is_file_synced(data):
     """
-    path = '/%s/%s' % (folder, subfolder.replace(os.path.sep, '/'))
-    while '//' in path:
-        path = path.replace('//', '/')
-    path = path.rstrip('/')
+    Runs some comparisons on file data retrieved from Dropbox against local version. 
+    If comparison fails delete any conflicting data and return False.
+    Otherwise return True 
+    """
+    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+    # Is this path currently occupied by a dir?
+    if os.path.isdir(local_path):
+        try:
+            shutil.rmtree(local_path)
+        except Exception as e:
+            dblog('Could not remove directory '+str(e))
+        return False
+    # Does a local file already exist at this path
+    elif os.path.isfile(local_path):
+        md_tupl = time.strptime(str(data.client_modified), '%Y-%m-%d %H:%M:%S')
+        md = time.mktime(md_tupl)
+        # Compare the local and remote file modified times
+        if md > int(os.path.getmtime(local_path)):
+            dblog(local_path+' is newer on the server')
+            try:
+                os.remove(local_path)
+            except Exception as e:
+                dblog('Could not remove file '+str(e))
+            return False
+        # compare local and remote file sizes
+        elif data.size != os.path.getsize(local_path):
+            dblog(local_path+' file size doesn\'nt match server')
+            try:
+                os.remove(local_path)
+            except Exception as e:
+                dblog('Could not remove file '+str(e))
+            return False
+        else:
+            dblog(local_path+' file is already synced')
+            return True
+
+    else:
+        return False
+
+def is_dir_in_local(data):
+    """
+    Runs some comparisons on directory data retrieved from Dropbox against local version. 
+    If comparison fails delete any conflicting data and return False.
+    Otherwise return True 
+    """
+    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+    if os.path.isfile(local_path):
+        try:
+            os.remove(local_path)
+        except Exception as e:
+            dblog('Could not remove file: '+str(e))
+        return False
+    if os.path.isdir(local_path):
+        return True
+    return False
+
+def sync_deleted(data):
+    """
+    Deleted any paths that are marked as deleted in data recieved from Dropbox
+    """
+    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+    if os.path.isdir(local_path):
+        try:
+            shutil.rmtree(local_path)
+        except Exception as e:
+            dblog('Could not remove directory: '+str(e))
+    elif os.path.isfile(local_path):
+        try:
+            os.remove(local_path)
+        except Exception as e:
+            dblog('Could not remove file: '+str(e))
+        
+
+    
+def sync_folder(data):
+    """
+    Create a new directory and any parent dirs found at Dropbox
+    """
+    path = data.path_display.strip('/')
+    parts = path.split('/')
+    full_path = rootdir
+    i = 0
+    # make sure all the parent dirs exist:
+    while i < len(parts):
+        full_path = '/'.join([full_path, parts[i]])
+        if not os.path.isdir(full_path):
+            try:
+                os.mkdir(full_path)
+            except Exception as e:
+                dblog('Could not create directory: '+str(e))
+                return None
+        i+=1
+
+def sync_file(data):
+    """
+    Create any parent dirs that don't exist locally before downloading a new file
+    """
+    path = data.path_display.strip('/')
+    parts = path.split('/')
+    full_path = rootdir
+    i = 0
+    # make sure all the parent dirs exist:
+    while i < len(parts)-1:
+        full_path = '/'.join([full_path, parts[i]])
+        if not os.path.isdir(full_path):
+            try:
+                os.mkdir(full_path)
+            except Exception as e:
+                dblog('Could not create directory: '+str(e))
+                return None
+        i+=1
+    download_file(data)
+
+def download_file(data):
+    """
+    Download a file from Dropbox
+    """
+
+    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+
+    dblog('downloading file: '+data.path_display)
     try:
-        with stopwatch('list_folder'):
-            res = dbx.files_list_folder(path)
+        dbx.files_download_to_file(local_path, data.path_display)
+    except dropbox.exceptions.ApiError as err:
+        dblog('*** API error: '+' - '+data.path_display+' - '+str(err))
+        return None 
+    dblog('downloaded: ' + data.path_display)
+    md_tupl = time.strptime(str(data.client_modified), '%Y-%m-%d %H:%M:%S')
+    md = time.mktime(md_tupl)
+    try:
+        os.utime(local_path, (time.time(), md))
+    except Exception as e:
+        dblog('Could not update file modification time: '+str(e))
+        return None
+
+def list_folder(folder):
+    """
+    fetch meta data contents of a Dropbox folder
+    """
+    path_list[folder] = []
+    path = folder.strip('/')
+    path = '/'+path
+    try:
+        res = dbx.files_list_folder(path, recursive=True, include_deleted=True)
     except dropbox.exceptions.ApiError as err:
         print('Folder listing failed for', path, '-- assumed empty:', err)
-        #dblog('ERR: ' + err)
         return {}
     else:
         rv = {}
         for entry in res.entries:
             rv[entry.name] = entry
+            p = rootdir.rstrip('/')+'/'+entry.path_display.strip('/')
+            path_list[folder].append(p)
         return rv
 
-def fetch_if_not_in_local(dbx, flist, rootdir):
-    for f, a in flist.items():
-        localpath = rootdir+'/'+f
-        dblog('checking if local instance of dir exists: '+localpath)
-        if os.path.isdir(localpath):
-            dblog('Folder exists: '+ localpath)
-        else:
-            dblog('Folder not found, creating now:' +localpath)
-            os.makedirs(localpath)
-        for fname, vals in a.items():
-            if not isinstance(fname, six.text_type):
-                fname = fname.decode('utf-8')
-            fpath = localpath+'/'+fname
-            if os.path.isfile(fpath):
-                dblog('File exists locally: ' + fpath)
-                md_tupl = time.strptime(vals['upd'], '%Y-%m-%d %H:%M:%S')
-                md = time.mktime(md_tupl)
-                if md > int(os.path.getmtime(fpath)):
-                    dblog(fpath+' is newer on the server, removing (will be refetched on next run)')
-                    os.remove(fpath)
-                elif vals['size'] != os.path.getsize(fpath):
-                    dblog('File size mismatch, refetching: '+ fpath + ' :: '+str(vals['size']) + '/'+str(os.path.getsize(fpath)))
-                    download_full(dbx, f, fname, rootdir, vals['upd'])
-            else:
-                dblog('File not found, fetching now: '+ fpath + ' :: '+vals['upd'])
-                download_full(dbx, f, fname, rootdir, vals['upd'])
-
-def upload_new(dbx, rootdir, folder, flist):
+def sync_local(folder):
+    """
+    Find any files that aren't on Dropbox and upload them
+    Should only run directly after downloading files have finished syncing ie. syncbox()
+    """
+    flist = path_list[folder]
+    print(flist)
     for dn, dirs, files in os.walk(rootdir+'/'+folder):
         subfolder = dn[len(rootdir):].strip(os.path.sep)
-        print('Descending into', subfolder, '...')
-        #path = '%s/%s' % (folder, subfolder.replace(os.path.sep, '/'))
+        dblog('Descending into'+ subfolder+ '...')
         # First do all the files.
         for name in files:
             fullname = os.path.join(dn, name)
@@ -366,86 +450,53 @@ def upload_new(dbx, rootdir, folder, flist):
                 name = name.decode('utf-8')
             nname = unicodedata.normalize('NFC', name)
             if name.startswith('.'):
-                print('Skipping dot file:', name)
+                dblog('Skipping dot file:'+ name)
             elif name.startswith('@') or name.endswith('~'):
-                print('Skipping temporary file:', name)
+                dblog('Skipping temporary file:'+ name)
             elif name.endswith('.pyc') or name.endswith('.pyo'):
-                print('Skipping generated file:', name)
-            elif subfolder not in flist or nname not in flist[subfolder]:
-                print('fullname',fullname)
-                if os.path.isdir(rootdir+'/'+subfolder):
-                    flist[subfolder] = {}
-                print('==== nname:', nname)
-                print(flist[subfolder])
-                upload(dbx, fullname, subfolder, name)       
-
+                dblog('Skipping generated file:'+ name)
+            elif fullname not in flist:
+                dblog('uploading : '+fullname)
+                upload(fullname)       
+            else: 
+                print('PATH EXISTS',fullname)
         # Then choose which subdirectories to traverse.
         keep = []
         for name in dirs:
             if name.startswith('.'):
-                print('Skipping dot directory:', name)
+                dblog('Skipping dot directory:'+ name)
             elif name.startswith('@') or name.endswith('~'):
-                print('Skipping temporary directory:', name)
+                dblog('Skipping temporary directory:'+ name)
             elif name == '__pycache__':
-                print('Skipping generated directory:', name)
+                dblog('Skipping generated directory:'+ name)
             
             else:
                 keep.append(name)
         dirs[:] = keep
 
-def upload(dbx, fullname, subfolder, name, overwrite=False):
-    """Upload a file.
-    Return the request response, or None in case of error.
+def upload(path, overwrite=False):
     """
-    path = '/%s/%s' % (subfolder.replace(os.path.sep, '/'), name)
-    while '//' in path:
-        path = path.replace('//', '/')
+    Upload a file to connected Dropbox acct.
+    """
     mode = (dropbox.files.WriteMode.overwrite
             if overwrite
             else dropbox.files.WriteMode.add)
-    mtime = os.path.getmtime(fullname)
-    with open(fullname, 'rb') as f:
+    mtime = os.path.getmtime(path)
+    target = path[len(rootdir):]
+    print('UPLOAD :: ',target)
+    with open(path, 'rb') as f:
         data = f.read()
-    with stopwatch('upload %d bytes' % len(data)):
-        try:
-            res = dbx.files_upload(
-                data, path, mode,
-                client_modified=datetime.datetime(*time.gmtime(mtime)[:6]),
-                mute=True)
-        except dropbox.exceptions.ApiError as err:
-            print('*** API error', err)
-            return None
-    print('uploaded as', res.name.encode('utf8'))
+    try:
+        res = dbx.files_upload(
+            data, target, mode,
+            client_modified=datetime.datetime(*time.gmtime(mtime)[:6]),
+            mute=True)
+    except dropbox.exceptions.ApiError as err:
+        dblog('*** API error: '+ str(err))
+        return None
+    dblog('uploaded as '+ res.name.encode('utf8'))
     return res
 
-
-def download_full(dbx, folder, name, localfolder, modification_time, subfolder=''):
-    """Download a file.
- 
-    Return the bytes of the file, or None if it doesn't exist.
-    """
-    dblog('downloading file: '+name)
-    path = '/%s/%s/%s' % (folder, subfolder.replace(os.path.sep, '/'), name)
-    localpath = '/%s/%s/%s' % (localfolder, folder.replace(os.path.sep, '/'), name)
-    while '//' in localpath:
-        localpath = localpath.replace('//', '/')
-    while '//' in path:
-        path = path.replace('//', '/')
-    print('PATH',path)
-    print('LOCAL PATH',localpath)
-    success = True
-    with stopwatch('download'):
-        try:
-            dbx.files_download_to_file(localpath, path)
-        except dropbox.exceptions.ApiError as err:
-            success = False
-            print('*** API error', err)
-            dblog('*** API error: '+' - '+path+' - '+str(err))
-    if success:
-        dblog('downloaded: ' + name)
-        md_tupl = time.strptime(modification_time, '%Y-%m-%d %H:%M:%S')
-        md = time.mktime(md_tupl)
-        os.utime(localpath, (time.time(), md))
 
 
 def piboxd():
