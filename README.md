@@ -1,7 +1,7 @@
 # PiDrop
-This project was created uising the Dropbox Python SDK to give me some tools to manage a dropbox on my Raspberry Pi 3 Model B+ and provides basic (see limitations below) syncing of dropbox folders and a text based UI (with Urwid) for manging those files and folders.
+This project was created uising the Dropbox Python SDK to give me some tools to manage a dropbox on my Raspberry Pi 3 Model B+ and provides basic syncing of dropbox folders and a text based UI (with Urwid) for manging those files and folders.
 
-Dropbox does provide some CL tools for working on Linux systems but they are'nt compatible with ARM based architecture so this code my be either a solution or starting point for other projects on similar setups. 
+Dropbox does provide some CL tools for working on Linux systems but they are'nt compatible with ARM based architecture so this code may be either a solution or starting point for other projects on similar setups. 
 
 ## Assumed Setup:
 
@@ -18,26 +18,29 @@ This was built with:
 cd ~
 git clone https://github.com/carl-codling/PiDrop.git
 ```
-- On first run of pidrop if certain config options aren't set then you'll be asked to add them. It's best to run with the cfg option first and configure all available options
-```console
-sudo python ~/PiDrop/pidrop.py cfg
+- install the Dropbox SDK
 ```
-- You can then run the script again in default mode and any folders you chose to sync will now start to download 
-```console
-sudo python ~/PiDrop/pidrop.py 
+pip install dropbox
 ```
+- You'll also need Urwid installed:
+```console
+pip install urwid
+```
+- Now run PiDrops setup function
+```console
+sudo python ~/PiDrop/pidrop.py setup
+```
+- Once you've successfully entered your Dropbox API token the PiDrop UI will automatically open. From here you can make further configuration such as choosing folders to sync. Once some folders have synced you'll also be able to use the file browser/manager.
+- Next time you wish to open the UI use the instructions in the following section:
 
 ## Text Based UI
 
 __There's also a user interface for moving, deleting and importing files__
 
-- You'll need Urwid installed for this:
+
+- To open the TUI:
 ```console
-pip install urwid
-```
-- And then you can run
-```console
-sudo python ~/PiDrop/pidrop-ui.py 
+sudo python ~/PiDrop/pidrop.py ui 
 ```
 
 __To make moving files back and forth between the Pi and the device SSHing in to it easier there's an import and export folder__
@@ -47,12 +50,12 @@ These can be configured through the config process mentioned above
 
 For example you can then copy the whole export folder to the host machine with SCP
 ```console
-scp -r -l 2000 pi@192.168.0.23:"'/path/to/export/directory'" ~/Target
+scp -r -l 2000 pi@192.168.0.23:"'/path/to/pidrop_out'" ~/Target
 ```
 
 Or send some files to your import folder:
 ```console
-scp /path/of/file/to.send pi@192.168.0.23:/path/to/import/dir
+scp /path/of/file/to.send pi@192.168.0.23:/path/to/pidrop_in
 ```
 
 ## Setting it to run Auto-magically with Cron
@@ -70,24 +73,15 @@ PIDROPFILE=/home/pi/PiDrop/pidrop.py # Full path to your pidrop.py file
 ```console
 sudo crontab -e
 ```
-- And then add a cronjob to the end of the file:
+- And then add a cronjob to the end of the file such as:
 ```
 0 * * * * sh /home/pi/PiDrop/pidrop_cron.sh
 ```
 *(the above example will run the script once every hour on the hour)*
 
-## Limitations
-- You can only sync root directories in your dropbox
-
-__Your local folders and the folders on the Dropbox servers should stay in sync so long as all deletions and file moves are done locally. If you make changes from a different machine  (eg. online or from your home pc software) PiDrop on your Pi will not be aware of this and conflicts may happen. This has at least the following implications:__
-- If you delete a file/folder from a different location such as another computer PiBox will see that it has a file/folder locally that doesn't exist on the server and upload it again
-- Likewise if you move a file/folder PiBox will both upload to the old location and download from the new so you'll end up with duplicates.
-
-*__For these reasons all modifications on synced folders should be done through the PiDrop UI__*
-
 ### Simplify Sending and Recieviing from your local machine:
 
-To simplify this process I set up a Bash script on my local machine that allows me to simply type 'pidrop get' or 'pidrop send' in to a terminal. Here are the sreps I followed:
+To simplify this process I set up a Bash script on my local machine (Linux Mint) that allows me to simply type 'pidrop get' or 'pidrop send' in to a terminal. Here are the steps I followed:
 
 1) Create 2 folders on your local machine that match the names of your import and export folders on the Pi. In the example we have pidrop_in and pidrop_out
 2) Create a file called pidrop in /usr/bin
@@ -119,10 +113,31 @@ if [[ $1 = 'send' ]]; then
 elif [[ $1 = 'get' ]]; then
     scp -r -l 2000 pi@${PIIP}:${PI_PATH}/${OUTBOX} ${LOCAL_PATH} # -l 2000 limitation can be removed if not necessary
 fi
-
-```
+ ```
 6) Now you can simply type 'pidrop get' or 'pidrop send' in to a terminal to transfer files back and forth.
 NB. If the address of your Pi changes frequently you can run these commands as:
 ```
  pidrop get/send <Raspberry Pi IP>
+```
+
+#### Sending from Android
+
+I set up a similar system on my (rooted) Android phone. This time I only wanted to send photos/videos from my phone to PiDrop.
+
+Steps:
+
+1) install the Termux app so we have a console to use
+2) enter the following command in to Termux so we can access files on the phone:
+```
+termux-setup-storage
+```
+3)Create a file called pidrop in /system/bin and with a text editor add the following (modified for your systems file paths)
+```
+#!/system/bin/bash
+
+scp -r /path/to/your/files/DCIM/Camera pi@192.168.0.23:/path/to/pidrop_in
+```
+- Now you can send your files to pidrop any time by using the following command in Termux:
+```
+sh /system/bin/pidrop
 ```

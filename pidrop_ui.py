@@ -1197,7 +1197,7 @@ def dropbox_connect():
     global dbx
     dbx = dropbox.Dropbox(cfga['token'])
 
-def main():
+def ui_init():
     global loop
     global mainview
     mainview = urwid.AttrWrap(urwid.Text('Loading'), 'body')
@@ -1212,5 +1212,5 @@ def main():
 
 
 
-if __name__=="__main__":
-    main()
+# if __name__=="__main__":
+#     ui_main()

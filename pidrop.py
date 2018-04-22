@@ -32,9 +32,11 @@ import json
 import urwid
 
 if sys.version.startswith('2'):
-    input = raw_input  # noqa: E501,F821; pylint: disable=redefined-builtin,undefined-variable,useless-suppression
+    input = raw_input  
 
 import dropbox
+
+from pidrop_ui import *
 
 parser = argparse.ArgumentParser(description='Download/sync/manage folders from Dropbox')
 parser.add_argument('funct', nargs='?', default='main',
@@ -56,11 +58,19 @@ def main():
 
     if not os.path.isfile(dir_path+'/cfg.json'):
         piboxd()
+        cfga = {'folders':[]}
         format_outp('[ CONFIG FILE NOT FOUND ] Please use these commands to create one', 'fail')
         return setup()
 
+    if args.funct == 'ui':
+        return ui_init()
+
     with open(dir_path+'/cfg.json') as json_file: 
         cfga = json.load(json_file)
+
+
+    if args.funct == 'setup':
+        return setup()
 
     rootdir = cfga['rootdir'].rstrip('/')
     
@@ -95,34 +105,52 @@ def connect_dbx():
         sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
 
 def setup():
-    cfga = {'folders':[]}
-    token = raw_input('Enter your API token: ')
+    token = input('Enter your Dropbox API token: ')
     if len(token.strip()):
         cfga['token'] = token.strip()
         format_outp('token set', 'success')
+        format_outp('Attempting to connect...', 'blue')
+        connect_dbx()
+        format_outp('Connected', 'success')
     else:
-        format_outp('please enter a valid token!', 'fail')
+        format_outp('please enter a Dropbox API token!', 'fail')
         setup()
-    path = raw_input('Enter the path to a local dir where you will store your files: ')
-    if os.path.isdir(path.strip()):
-        cfga['rootdir'] = path.strip()
-        format_outp('path set', 'success')
-    else:
-        format_outp('please enter a valid dir!', 'fail')
-        setup()
+    if 'rootdir' not in cfga:
+        setup_dirs()
+
     with open(dir_path+'/cfg.json', 'w') as outfile:  
         json.dump(cfga, outfile)
     f = open(dir_path+'/flist.json', 'w')   
     f.write('{}')
     f.close()
-    format_outp('Great! That\'s the most important settings configured. Now please use the configuration guide below to make any further adjustments such as choosing Dropbox folders to sync.' , 'success')
-    format_outp('Type "help" for a list of commands', 'blue')
-    dbx = connect_dbx(cfga['token'])
-    return cfg(dbx, cfga)
+    return ui_init()
+
+
+def setup_dirs():
+    path = input('Enter the path to a local dir where you will store your files: ')
+    path = path.strip()
+    if os.path.isdir(path):
+        fpi = path+os.sep+'pidrop'
+        fin = path+os.sep+'pidrop_in'
+        fout = path+os.sep+'pidrop_out'
+        try:
+            os.mkdir(fpi)
+            os.mkdir(fin)
+            os.mkdir(fout)
+        except OSError as e:
+            return print('OS error', e)
+        cfga['rootdir'] = fpi
+        cfga['import-dir'] = fin
+        cfga['export-dir'] = fout
+        format_outp('path set', 'success')
+    else:
+        format_outp('please enter a valid dir!', 'fail')
+        setup_dirs()
+
 
 def cfg(dbx, cfga, var=None):
     if not var:
-        var = raw_input('command:')
+        var = input('command:')
     if var == 'help':
         print('------------------')
         format_outp('Commands:', 'success')
@@ -144,7 +172,7 @@ def cfg(dbx, cfga, var=None):
         with open(dir_path+'/cfg.json') as json_file:  
             cfgb = json.load(json_file)
         if cfga != cfgb:
-            conf = raw_input('exit without saving? (y/n): ')
+            conf = input('exit without saving? (y/n): ')
             if conf == 'y':
                 return
             else:
@@ -160,7 +188,7 @@ def cfg(dbx, cfga, var=None):
         print( json.dumps(parsed, indent=4, sort_keys=True))
         cfg(dbx, cfga)
     elif var == 'set-rootdir':
-        path = raw_input('enter path to local directory: ')
+        path = input('enter path to local directory: ')
         if os.path.isdir(path):
             cfga['rootdir'] = path.strip()
             format_outp('path set', 'success')
@@ -169,7 +197,7 @@ def cfg(dbx, cfga, var=None):
             format_outp('please enter a valid dir!', 'fail')
             cfg(dbx, cfga, 'set-rootdir')
     elif var == 'set-token':
-        token = raw_input('enter token here:')
+        token = input('enter token here:')
         cfga['token'] = token.strip()
         format_outp('token set', 'success')
         cfg(dbx, cfga)
@@ -214,7 +242,7 @@ def cfg(dbx, cfga, var=None):
         format_outp('** synced folders are highlighted green', 'blue')
         cfg(dbx, cfga)
     elif var == 'import-dir':
-        f = raw_input('enter a directory path:')
+        f = input('enter a directory path:')
         f = f.strip()
         if os.path.isdir(f):
             cfga['import-dir'] = f
@@ -223,7 +251,7 @@ def cfg(dbx, cfga, var=None):
             format_outp('directory not found', 'fail')
         cfg(dbx, cfga)
     elif var == 'export-dir':
-        f = raw_input('enter a directory path:')
+        f = input('enter a directory path:')
         f = f.strip()
         if os.path.isdir(f):
             cfga['export-dir'] = f
@@ -463,7 +491,7 @@ def sync_local(folder):
             elif fullname not in flist:
                 dblog('uploading : '+fullname)
                 size = os.path.getsize(fullname)
-                if size < 5 * 1024 *1024:
+                if size < 20 * 1024 *1024:
                     upload(fullname)    
                 else:
                     upload_large(fullname)
@@ -513,7 +541,7 @@ def upload(path, overwrite=False):
     except OSError as err:
         dblog('*** OS error: '+ str(err))
         return None
-
+    flist[new_path] = fname
     dblog('uploaded as '+ res.name.encode('utf8'))
     return res
 
@@ -568,6 +596,7 @@ def upload_large(path, overwrite=False):
     except OSError as err:
         dblog('*** OS error: '+ str(err))
         return None
+    
 
 
 def piboxd():
