@@ -46,6 +46,7 @@ def main():
     global cfga
     global rootdir
     global path_list
+    global flist
 
     path_list = {}
 
@@ -58,7 +59,7 @@ def main():
         format_outp('[ CONFIG FILE NOT FOUND ] Please use these commands to create one', 'fail')
         return setup()
 
-    with open(dir_path+'/cfg.json') as json_file:  
+    with open(dir_path+'/cfg.json') as json_file: 
         cfga = json.load(json_file)
 
     rootdir = cfga['rootdir'].rstrip('/')
@@ -70,13 +71,17 @@ def main():
         format_outp('Type "help" for a list of commands', 'blue')
         return cfg(dbx, cfga)
 
-    with open(dir_path+'/flist.json') as json_file:  
-        flist = json.load(json_file)
+    # we store a list of files that are synced, along with display paths
+    flist = {}
 
     for folder in cfga['folders']:
         # scan_remote_folder(dbx, folder, flist)
         # upload_new(dbx, rootdir, folder, flist)
         syncbox(folder)
+
+    # store our list of syced paths for use in the UI
+    with open(dir_path+'/flist.json', 'w') as fp:
+        json.dump(flist, fp)
 
     dblog('END')
     return
@@ -431,6 +436,7 @@ def list_folder(folder):
             rv[entry.name] = entry
             p = rootdir.rstrip('/')+'/'+entry.path_lower.strip('/')
             path_list[folder].append(p)
+            flist[p] = os.path.basename(entry.path_display)
         return rv
 
 def sync_local(folder):

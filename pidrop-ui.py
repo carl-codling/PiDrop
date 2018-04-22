@@ -124,8 +124,15 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 self._w.focus_attr = 'dir focus'
 
     def get_display_text(self):
-        return self.get_node().get_value()['name']
-
+        path = self.get_node().get_value()['path']
+        name = self.get_node().get_value()['name']
+        fpath = path+os.sep+name
+        if self.get_node().get_depth()<1:
+            return name
+        elif fpath in flist:
+            return u"\u25CF " + flist[fpath]
+        else:
+            return u"\u25CB " + self.get_node().get_value()['name']
     def selectable(self):
         return True
 
@@ -319,12 +326,6 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 return None
             os.rename(f, newp)
             i+=1
-
-        # reset the json list of files to prevent conflicts
-        # TO DO: find a better way to manage this
-        f = open(dir_path+"/flist.json", 'w')
-        f.write('{}')
-        f.close()
 
         build_pibox_list()  
         notify('%d Selected files were moved.' % (i), 'success')
@@ -1174,11 +1175,18 @@ def do_welcome_screen(w):
 def load_config():
     global dir_path
     global cfga
+    global flist
     dir_path = os.path.dirname(os.path.realpath(__file__))
     if not os.path.isfile(dir_path+'/cfg.json'):
         update_config({"export-dir": "", "folders": [], "import-dir": "", "rootdir": "", "token": ""})
     with open(dir_path+'/cfg.json') as json_file:  
             cfga = json.load(json_file)
+
+    if not os.path.isfile(dir_path+'/flist.json'):
+        flist = {}
+    else:
+        with open(dir_path+'/flist.json') as json_file:
+                flist = json.load(json_file)
 
 def update_config(data):
     with open(dir_path+'/cfg.json', 'w') as outfile:  
