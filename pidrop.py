@@ -83,7 +83,7 @@ def main():
 
 def connect_dbx():
     global dbx
-    dbx = dropbox.Dropbox(cfga['token'])
+    dbx = dropbox.Dropbox(cfga['token'], timeout=300)
     try:
         dbx.users_get_current_account()
     except AuthError as err:
@@ -282,7 +282,7 @@ def is_file_synced(data):
     If comparison fails delete any conflicting data and return False.
     Otherwise return True 
     """
-    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+    local_path = '/'.join([rootdir, data.path_lower.strip('/')])
     # Is this path currently occupied by a dir?
     if os.path.isdir(local_path):
         try:
@@ -323,7 +323,7 @@ def is_dir_in_local(data):
     If comparison fails delete any conflicting data and return False.
     Otherwise return True 
     """
-    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+    local_path = '/'.join([rootdir, data.path_lower.strip('/')])
     if os.path.isfile(local_path):
         try:
             os.remove(local_path)
@@ -338,7 +338,7 @@ def sync_deleted(data):
     """
     Deleted any paths that are marked as deleted in data recieved from Dropbox
     """
-    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+    local_path = '/'.join([rootdir, data.path_lower.strip('/')])
     if os.path.isdir(local_path):
         try:
             shutil.rmtree(local_path)
@@ -356,7 +356,7 @@ def sync_folder(data):
     """
     Create a new directory and any parent dirs found at Dropbox
     """
-    path = data.path_display.strip('/')
+    path = data.path_lower.strip('/')
     parts = path.split('/')
     full_path = rootdir
     i = 0
@@ -375,7 +375,7 @@ def sync_file(data):
     """
     Create any parent dirs that don't exist locally before downloading a new file
     """
-    path = data.path_display.strip('/')
+    path = data.path_lower.strip('/')
     parts = path.split('/')
     full_path = rootdir
     i = 0
@@ -396,15 +396,15 @@ def download_file(data):
     Download a file from Dropbox
     """
 
-    local_path = '/'.join([rootdir, data.path_display.strip('/')])
+    local_path = '/'.join([rootdir, data.path_lower.strip('/')])
 
-    dblog('downloading file: '+data.path_display)
+    dblog('downloading file: '+data.path_lower)
     try:
-        dbx.files_download_to_file(local_path, data.path_display)
+        dbx.files_download_to_file(local_path, data.path_lower)
     except dropbox.exceptions.ApiError as err:
-        dblog('*** API error: '+' - '+data.path_display+' - '+str(err))
+        dblog('*** API error: '+' - '+data.path_lower+' - '+str(err))
         return None 
-    dblog('downloaded: ' + data.path_display)
+    dblog('downloaded: ' + data.path_lower)
     md_tupl = time.strptime(str(data.client_modified), '%Y-%m-%d %H:%M:%S')
     md = time.mktime(md_tupl)
     try:
@@ -423,13 +423,13 @@ def list_folder(folder):
     try:
         res = dbx.files_list_folder(path, recursive=True, include_deleted=True)
     except dropbox.exceptions.ApiError as err:
-        print('Folder listing failed for', path, '-- assumed empty:', err)
+        dblog('Folder listing failed for'+ path+ '-- assumed empty:'+ str(err))
         return {}
     else:
         rv = {}
         for entry in res.entries:
             rv[entry.name] = entry
-            p = rootdir.rstrip('/')+'/'+entry.path_display.strip('/')
+            p = rootdir.rstrip('/')+'/'+entry.path_lower.strip('/')
             path_list[folder].append(p)
         return rv
 
@@ -439,7 +439,6 @@ def sync_local(folder):
     Should only run directly after downloading files have finished syncing ie. syncbox()
     """
     flist = path_list[folder]
-    print(flist)
     for dn, dirs, files in os.walk(rootdir+'/'+folder):
         subfolder = dn[len(rootdir):].strip(os.path.sep)
         dblog('Descending into'+ subfolder+ '...')
@@ -458,12 +457,12 @@ def sync_local(folder):
             elif fullname not in flist:
                 dblog('uploading : '+fullname)
                 size = os.path.getsize(fullname)
-                if size < 20 * 1024 *1024:
+                if size < 5 * 1024 *1024:
                     upload(fullname)    
                 else:
                     upload_large(fullname)
             else: 
-                print('PATH EXISTS',fullname)
+                dblog('PATH EXISTS: '+fullname)
         # Then choose which subdirectories to traverse.
         keep = []
         for name in dirs:
@@ -487,7 +486,8 @@ def upload(path, overwrite=False):
             else dropbox.files.WriteMode.add)
     mtime = os.path.getmtime(path)
     target = path[len(rootdir):]
-    print('UPLOAD :: ',target)
+
+    dblog('UPLOAD :: '+target)
     with open(path, 'rb') as f:
         data = f.read()
     try:
@@ -498,17 +498,34 @@ def upload(path, overwrite=False):
     except dropbox.exceptions.ApiError as err:
         dblog('*** API error: '+ str(err))
         return None
+
+    fname = os.path.basename(path)
+    fname_lower = fname.lower()
+    new_path = os.path.dirname(path)+os.sep+fname_lower
+    try:
+        os.rename(path, new_path)
+    except OSError as err:
+        dblog('*** OS error: '+ str(err))
+        return None
+
     dblog('uploaded as '+ res.name.encode('utf8'))
     return res
 
 
-def upload_large(path):
+def upload_large(path, overwrite=False):
+
+    mode = (dropbox.files.WriteMode.overwrite
+            if overwrite
+            else dropbox.files.WriteMode.add)
+
     f = open(path)
     file_size = os.path.getsize(path)
 
     target = path[len(rootdir):]
+    mtime = os.path.getmtime(path)
+    client_modified = datetime.datetime(*time.gmtime(mtime)[:6])
 
-    print('UPLOAD LARGE FILE :: ',file_size ,target)
+    dblog('UPLOAD LARGE FILE :: '+str(file_size)+' '+target)
 
     CHUNK_SIZE = 4 * 1024 * 1024
 
@@ -521,7 +538,10 @@ def upload_large(path):
         upload_session_start_result = dbx.files_upload_session_start(f.read(CHUNK_SIZE))
         cursor = dropbox.files.UploadSessionCursor(session_id=upload_session_start_result.session_id,
                                                    offset=f.tell())
-        commit = dropbox.files.CommitInfo(path=target)
+        commit = dropbox.files.CommitInfo(path=target,
+                                          mode=mode,
+                                          client_modified=client_modified,
+                                          mute=True)
 
         while f.tell() < file_size:
             if ((file_size - f.tell()) <= CHUNK_SIZE):
@@ -532,9 +552,16 @@ def upload_large(path):
                 dbx.files_upload_session_append(f.read(CHUNK_SIZE),
                                                 cursor.session_id,
                                                 cursor.offset)
-                print('ADDING CHUNK ')
+                dblog('ADDING CHUNK ')
                 cursor.offset = f.tell()
-
+    fname = os.path.basename(path)
+    fname_lower = fname.lower()
+    new_path = os.path.dirname(path)+os.sep+fname_lower
+    try:
+        os.rename(path, new_path)
+    except OSError as err:
+        dblog('*** OS error: '+ str(err))
+        return None
 
 
 def piboxd():

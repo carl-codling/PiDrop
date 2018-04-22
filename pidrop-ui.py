@@ -75,7 +75,7 @@ class PiBoxDirInput(urwid.Edit):
         rootlen = len(cfga['rootdir'])-1
         current_name = new_dir_location.split(os.sep)[-1]
         new_path = new_dir_location[:-len(current_name)] + new_name
-
+        new_path_local = new_dir_location[:-len(current_name)] + new_name.lower()
         try:
             res = dbx.files_move(
                 new_dir_location[rootlen:], new_path[rootlen:])
@@ -1126,7 +1126,7 @@ def list_remote_folders(d='', level=1):
         for entry in res.entries:
             if isinstance(entry, dropbox.files.FolderMetadata):
                 f = d+os.path.sep+entry.name
-                rv.append(f[1:])
+                rv.append(f[1:].lower())
                 if 'sync_depth' in cfga and cfga['sync_depth'] > level:
                     rv = rv + list_remote_folders(f, level+1)
         return rv
