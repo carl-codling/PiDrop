@@ -19,7 +19,7 @@ cd ~
 git clone https://github.com/carl-codling/PiDrop.git
 ```
 - install the Dropbox SDK
-```
+```console
 pip install dropbox
 ```
 - You'll also need Urwid installed:
@@ -115,6 +115,7 @@ elif [[ $1 = 'get' ]]; then
 fi
  ```
 6) Now you can simply type 'pidrop get' or 'pidrop send' in to a terminal to transfer files back and forth.
+
 NB. If the address of your Pi changes frequently you can run these commands as:
 ```
  pidrop get/send <Raspberry Pi IP>
