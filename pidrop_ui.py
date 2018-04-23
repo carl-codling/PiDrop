@@ -95,9 +95,11 @@ class PiBoxDirInput(urwid.Edit):
             notify('*** API error: %s' % (str(err)), 'error')
             keys.set_text(keys_default_text)
             return None
-        os.rename(new_dir_location, new_path)
+        os.rename(new_dir_location, new_path_local)
         notify('%s > renamed to > %s' % (new_dir_location[rootlen:],new_path[rootlen:]),'success')
         keys.set_text(keys_default_text)
+        flist[new_path_local] = new_name
+        save_flist_to_json(dir_path, flist)
 
 class PiboxTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
