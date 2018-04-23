@@ -818,6 +818,7 @@ def build_pibox_list(dir='*'):
     more_details.set_text('')
  
 def get_pibox_listbox():
+    load_synced_file_list()
     if search_term:
         data = get_search_list()
     else:
@@ -1182,6 +1183,8 @@ def load_config():
     with open(dir_path+'/cfg.json') as json_file:  
             cfga = json.load(json_file)
 
+def load_synced_file_list():
+    global flist
     if not os.path.isfile(dir_path+'/flist.json'):
         flist = {}
     else:

@@ -52,8 +52,6 @@ def main():
 
     path_list = {}
 
-    open(dir_path+"/pibox.log", 'w').close()
-    dblog('program started in '+dir_path)
     args = parser.parse_args()
 
     if not os.path.isfile(dir_path+'/cfg.json'):
@@ -83,6 +81,9 @@ def main():
 
     # we store a list of files that are synced, along with display paths
     flist = {}
+
+    open(dir_path+"/pibox.log", 'w').close()
+    dblog('program started in '+dir_path)
 
     for folder in cfga['folders']:
         # scan_remote_folder(dbx, folder, flist)
@@ -475,7 +476,7 @@ def sync_local(folder):
     flist = path_list[folder]
     for dn, dirs, files in os.walk(rootdir+'/'+folder):
         subfolder = dn[len(rootdir):].strip(os.path.sep)
-        dblog('Descending into'+ subfolder+ '...')
+        dblog('Descending into: '+ subfolder+ '...')
         # First do all the files.
         for name in files:
             fullname = os.path.join(dn, name)
@@ -483,11 +484,11 @@ def sync_local(folder):
                 name = name.decode('utf-8')
             nname = unicodedata.normalize('NFC', name)
             if name.startswith('.'):
-                dblog('Skipping dot file:'+ name)
+                dblog('Skipping dot file: '+ name)
             elif name.startswith('@') or name.endswith('~'):
-                dblog('Skipping temporary file:'+ name)
+                dblog('Skipping temporary file: '+ name)
             elif name.endswith('.pyc') or name.endswith('.pyo'):
-                dblog('Skipping generated file:'+ name)
+                dblog('Skipping generated file: '+ name)
             elif fullname not in flist:
                 dblog('uploading : '+fullname)
                 size = os.path.getsize(fullname)
@@ -501,11 +502,11 @@ def sync_local(folder):
         keep = []
         for name in dirs:
             if name.startswith('.'):
-                dblog('Skipping dot directory:'+ name)
+                dblog('Skipping dot directory: '+ name)
             elif name.startswith('@') or name.endswith('~'):
-                dblog('Skipping temporary directory:'+ name)
+                dblog('Skipping temporary directory: '+ name)
             elif name == '__pycache__':
-                dblog('Skipping generated directory:'+ name)
+                dblog('Skipping generated directory: '+ name)
             
             else:
                 keep.append(name)
@@ -559,7 +560,7 @@ def upload_large(path, overwrite=False):
     mtime = os.path.getmtime(path)
     client_modified = datetime.datetime(*time.gmtime(mtime)[:6])
 
-    dblog('UPLOAD LARGE FILE :: '+str(file_size)+' '+target)
+    dblog('UPLOAD LARGE FILE :: '+readable_bytes(file_size)+' '+target)
 
     CHUNK_SIZE = 4 * 1024 * 1024
 
@@ -577,6 +578,7 @@ def upload_large(path, overwrite=False):
                                           client_modified=client_modified,
                                           mute=True)
 
+        nchunks = 0
         while f.tell() < file_size:
             if ((file_size - f.tell()) <= CHUNK_SIZE):
                 print(dbx.files_upload_session_finish(f.read(CHUNK_SIZE),
@@ -586,7 +588,8 @@ def upload_large(path, overwrite=False):
                 dbx.files_upload_session_append(f.read(CHUNK_SIZE),
                                                 cursor.session_id,
                                                 cursor.offset)
-                dblog('ADDING CHUNK ')
+                nchunks += 1
+                dblog('ADDING '+readable_bytes(CHUNK_SIZE)+' CHUNK :: '+readable_bytes(CHUNK_SIZE*nchunks))
                 cursor.offset = f.tell()
     fname = os.path.basename(path)
     fname_lower = fname.lower()
@@ -596,6 +599,7 @@ def upload_large(path, overwrite=False):
     except OSError as err:
         dblog('*** OS error: '+ str(err))
         return None
+    flist[new_path] = fname
     
 
 
