@@ -966,7 +966,7 @@ def construct_browser_mainview():
         footer=urwid.Padding(footer, left=2, right=2)
     )
 
-def save_flist_to_json(data):
+def save_flist_to_json(dir_path, data):
     with open(dir_path+'/flist.json', 'w') as fp:
         json.dump(data, fp)
 

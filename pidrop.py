@@ -91,7 +91,7 @@ def main():
         syncbox(folder)
 
     # store our list of syced paths for use in the UI
-    save_flist_to_json(flist)
+    save_flist_to_json(dir_path, flist)
 
     dblog('END')
     return
