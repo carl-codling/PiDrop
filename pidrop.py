@@ -91,8 +91,7 @@ def main():
         syncbox(folder)
 
     # store our list of syced paths for use in the UI
-    with open(dir_path+'/flist.json', 'w') as fp:
-        json.dump(flist, fp)
+    save_flist_to_json(flist)
 
     dblog('END')
     return
@@ -501,16 +500,32 @@ def sync_local(folder):
         # Then choose which subdirectories to traverse.
         keep = []
         for name in dirs:
+            fullname = os.path.join(dn, name)
             if name.startswith('.'):
                 dblog('Skipping dot directory: '+ name)
             elif name.startswith('@') or name.endswith('~'):
                 dblog('Skipping temporary directory: '+ name)
             elif name == '__pycache__':
                 dblog('Skipping generated directory: '+ name)
-            
+            elif fullname not in flist:
+                dblog('FOUND FOLDER NOT AT SERVER : '+fullname)
+                create_remote_folder(fullname)
             else:
                 keep.append(name)
         dirs[:] = keep
+
+def create_remote_folder(path):
+    remote_path = path[len(cfga['rootdir'])-1:]
+    dblog(remote_path)
+    try:
+        res = dbx.files_create_folder_v2(
+            remote_path,
+            autorename=True)
+    except dropbox.exceptions.ApiError as err:
+        dblog('*** API error: '+ str(err))
+        return None
+    dblog('CREATED REMOTE FOLDER: '+remote_path)
+    flist[path] = os.path.basename(path)
 
 def upload(path, overwrite=False):
     """

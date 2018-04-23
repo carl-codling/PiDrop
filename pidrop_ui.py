@@ -54,9 +54,21 @@ class PiBoxDirInput(urwid.Edit):
             dirname = self.get_edit_text()
 
             if file_mode == 'new_dir' and len(dirname) > 0:
-                os.mkdir(new_dir_location+os.sep+dirname)
+                remote_path = new_dir_location[len(cfga['rootdir'])-1:]+os.sep+dirname
+                notify(remote_path, 'success')
+                try:
+                    res = dbx.files_create_folder_v2(
+                        remote_path,
+                        autorename=True)
+                except dropbox.exceptions.ApiError as err:
+                    notify('*** API error: '+ str(err))
+                    return None
+                new_local_loc = new_dir_location+os.sep+os.path.basename(res.metadata.path_lower)
+                os.mkdir(new_local_loc)
                 notify('New directory %s created at %s' % (dirname,new_dir_location), 'success')
                 keys.set_text(keys_default_text)
+                flist[new_local_loc] = dirname
+                save_flist_to_json(flist)
             
             elif file_mode == 'rename':
                 self.rename_path(dirname)
@@ -953,6 +965,10 @@ def construct_browser_mainview():
         header=urwid.AttrWrap(header, 'head'),
         footer=urwid.Padding(footer, left=2, right=2)
     )
+
+def save_flist_to_json(data):
+    with open(dir_path+'/flist.json', 'w') as fp:
+        json.dump(data, fp)
 
 def load_palette():
     global palette
