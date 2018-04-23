@@ -68,7 +68,7 @@ class PiBoxDirInput(urwid.Edit):
                 notify('New directory %s created at %s' % (dirname,new_dir_location), 'success')
                 keys.set_text(keys_default_text)
                 flist[new_local_loc] = dirname
-                save_flist_to_json(flist)
+                save_flist_to_json(dir_path, flist)
             
             elif file_mode == 'rename':
                 self.rename_path(dirname)
@@ -329,16 +329,25 @@ class PiboxTreeWidget(urwid.TreeWidget):
         i=0
         for f in selected_files:
             newp = p+os.sep+f.split(os.sep)[-1]
+            if f in flist:
+                newp_remote = p+os.sep+flist[f]
+                newp_remote = newp_remote[rootlen:]
+            else:
+                newp_remote = newp[rootlen:]
             try:
                 res = dbx.files_move(
-                    f[rootlen:], newp[rootlen:],
+                    f[rootlen:], newp_remote,
                     autorename=True)
             except dropbox.exceptions.ApiError as err:
                 notify('*** API error: %s' % (str(err)))
                 return None
             os.rename(f, newp)
+            if f in flist:
+                flist[newp] = flist[f]
+                del flist[f]
             i+=1
 
+        save_flist_to_json(dir_path, flist)
         build_pibox_list()  
         notify('%d Selected files were moved.' % (i), 'success')
         keys.set_text(keys_default_text)
