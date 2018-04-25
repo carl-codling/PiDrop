@@ -144,10 +144,14 @@ class PiboxTreeWidget(urwid.TreeWidget):
         fpath = path+os.sep+name
         if self.get_node().get_depth()<1:
             return name
-        elif fpath in flist:
-            return u"\u25CF " + flist[fpath]
         else:
-            return u"\u25CB " + self.get_node().get_value()['name']
+            self.sync_status = get_sync_status(fpath)
+            if self.sync_status == 'synced':
+                return u"\u25CF " + flist[fpath]
+            elif self.sync_status == 'syncing':
+                return u"\u25D4 " + self.get_node().get_value()['name']
+            else:
+                return u"\u25CB " + self.get_node().get_value()['name']
     def selectable(self):
         return True
 
@@ -297,8 +301,10 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def path_details(self):
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         l = [urwid.Text('')]
-        if location in flist:
+        if self.sync_status == 'synced':
             l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'success'))
+        elif self.sync_status == 'syncing':
+            l.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'body'))
         else:
             l.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'error'))
         l.append(urwid.Text('Full path: '+location))
@@ -824,6 +830,21 @@ class MainContainer(urwid.Pile):
             do_help_menu(None)
         else:
             return key
+
+def get_sync_status(path):
+    if path in flist:
+        return 'synced'
+    else:
+        reduced_path = path[len(cfga['rootdir']):]
+        fparts = reduced_path.split(os.sep)
+        p = ''
+        for part in fparts:
+            p = p+part
+            p = p.strip(os.sep)
+            if p in cfga['folders']:
+                return 'syncing'
+        return 'not synced'
+
 
 def empty_importer(i):
     for the_file in os.listdir(cfga['import-dir']):
