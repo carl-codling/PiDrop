@@ -21,6 +21,7 @@ import os
 import fnmatch
 import json
 import time
+from datetime import datetime
 import unicodedata
 import six
 import urwid
@@ -999,6 +1000,7 @@ def do_filebrowser(w):
     global file_mode
     global collapse_cache 
     global keys_default_text
+    global dbx
     keys_default_text = '[B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp | [Q]uit'
     selected_files = []
     import_files = []
@@ -1006,7 +1008,7 @@ def do_filebrowser(w):
     search_term = None
     file_mode = None
     collapse_cache = {}
-    dropbox_connect()
+    dbx = connect_dbx(cfga['token'])
     construct_browser_right_column()
     construct_browser_main_column()
     construct_browser_mainview()
@@ -1015,7 +1017,8 @@ def do_config_menu(w):
     global config_list
     global cfgtitle
     global errbox
-    dropbox_connect()
+    global dbx
+    dbx = connect_dbx(cfga['token'])
     footer = urwid.AttrWrap(urwid.Text('[B]ack to main menu | [F]ile browser | [H]elp | [Q]uit'), 'footer')
     footer = urwid.Pile([divider,footer,divider])
     footer = urwid.Padding(footer, left=2, right=2)
@@ -1032,7 +1035,7 @@ def do_config_menu(w):
     config_list = urwid.AttrWrap(urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_theme),divider,style_btn(back)]), 'body')
     pile = MainContainer([('pack',divider),('pack',cfgtitle),('pack',divider), config_list])
     mainview.original_widget = urwid.AttrWrap(urwid.Frame(
-        urwid.Padding(pile, left=5, right=5, width=70, align='center'),
+        urwid.Padding(pile, left=5, right=5, width=120, align='center'),
         header=urwid.AttrWrap(urwid.Text('PiDrop Config'), 'header'),
         footer=footer
     ),'body')
@@ -1074,30 +1077,45 @@ def change_dir(w, dirpath, dirname):
     cfgb[dirname] = dirpath
 
 def do_config_menu_sync(w):
-    outlist = []
-    if 'sync_depth' in cfga:
-        sd = cfga['sync_depth']
-    else: sd = 1
-    leveldown = urwid.Button(' - ')
-    level = urwid.Text('Directory Depth: %d' % (sd))
-    levelup = urwid.Button(' + ')
-    level_ctrl = urwid.Columns([(7,leveldown),(20,level),(7,levelup)])
-    urwid.connect_signal(leveldown, 'click', change_sync_depth, sd-1)
-    urwid.connect_signal(levelup, 'click', change_sync_depth, sd+1)
-    remote_folders = list_remote_folders()
-    outlist.append(level_ctrl)
-    outlist.append(divider)
-    for name in remote_folders:
-        if name in cfga['folders']:
-            outlist.append(urwid.CheckBox(name, state=True, user_data=name, on_state_change=set_sync))
-        else:
-            outlist.append(urwid.CheckBox(name, state=False, user_data=name, on_state_change=set_sync))
-    back = urwid.Button('Back')
-    outlist.append(divider)
-    outlist.append(errbox)
-    outlist.append(style_btn(back))
-    urwid.connect_signal(back,'click',do_config_menu)
-    config_list.original_widget = urwid.ListBox(outlist)
+    if 'all_remote_folders' in cfga:
+        outlist = []
+        if 'sync_depth' in cfga:
+            sd = cfga['sync_depth']
+        else: sd = 1
+        leveldown = urwid.Button(' - ')
+        level = urwid.Text(' Directory Depth: %d' % (sd))
+        levelup = urwid.Button(' + ')
+        level_ctrl = urwid.Columns([(7,urwid.AttrWrap(leveldown,'button')),(20,level),(7,urwid.AttrWrap(levelup,'button'))])
+        urwid.connect_signal(leveldown, 'click', change_sync_depth, sd-1)
+        urwid.connect_signal(levelup, 'click', change_sync_depth, sd+1)
+        remote_folders = cfga['all_remote_folders']['folders'] #list_remote_folders()
+        outlist.append(level_ctrl)
+        upd = urwid.Button('Update List')
+        urwid.connect_signal(upd,'click',update_folder_list)
+        update_row = urwid.Columns([(15, urwid.AttrWrap(upd, 'details')),urwid.Text('(Last updated %s)' % (cfga['all_remote_folders']['upd']))])
+        outlist.append(divider)
+        outlist.append(update_row)
+        outlist.append(divider)
+        for name in remote_folders: 
+            name =name.strip(os.sep)
+            depth = name.count(os.sep)
+            if depth < sd:
+                display_txt = '%s %s' % ('  '*depth, name.split(os.sep)[-1])
+                if name in cfga['folders']:
+                    outlist.append(urwid.CheckBox(display_txt, state=True, user_data=name, on_state_change=set_sync))
+                else:
+                    outlist.append(urwid.CheckBox(display_txt, state=False, user_data=name, on_state_change=set_sync))
+        back = urwid.Button('Back')
+        outlist.append(divider)
+        outlist.append(errbox)
+        outlist.append(style_btn(back))
+        urwid.connect_signal(back,'click',do_config_menu)
+        config_list.original_widget = urwid.ListBox(outlist)
+    else:
+        msg = urwid.Text('You haven\'t yet retrieved your directory structure from Dropbox. Please click the button below. This may take a few minutes...')
+        btn = urwid.Button('Fetch list')
+        config_list.original_widget = urwid.ListBox([msg, divider, btn])
+        urwid.connect_signal(btn,'click',update_folder_list)
 
 def change_sync_depth(w,i):
     if i < 1:
@@ -1144,21 +1162,57 @@ def set_sync(w, state, name):
         cfga['folders'].append(name)
         update_config(cfga)
 
-def list_remote_folders(d='', level=1):
-    try:
-        res = dbx.files_list_folder(d)
-    except dropbox.exceptions.ApiError as err:
-        notify('Folder listing failed -- assumed empty: %s' % str(err))
-        return []
+def update_folder_list(d):
+    folders = retrieve_folder_list()
+    cfga['all_remote_folders'] = {
+        'folders':folders,
+        'upd':str(datetime.now())
+    }
+    update_config(cfga)
+    do_config_menu_sync(None)
+
+def retrieve_folder_list(cursor=None):
+    if cursor is not None:
+        res = dbx.files_list_folder_continue(cursor)
     else:
-        rv = []
-        for entry in res.entries:
-            if isinstance(entry, dropbox.files.FolderMetadata):
-                f = d+os.path.sep+entry.name
-                rv.append(f[1:].lower())
-                if 'sync_depth' in cfga and cfga['sync_depth'] > level:
-                    rv = rv + list_remote_folders(f, level+1)
-        return rv
+        res = dbx.files_list_folder('', recursive=True)
+    folders = []
+    for entry in res.entries:
+        if isinstance(entry, dropbox.files.FolderMetadata):
+            folders.append(entry.path_lower)
+    if res.has_more:
+        folders.extend(retrieve_folder_list(res.cursor))
+    folders.sort()
+    return folders
+
+# def list_remote_folders(d='', level=1):
+#     try:
+#         res = dbx.files_list_folder('', recursive=True)
+#     except dropbox.exceptions.ApiError as err:
+#         dblog('Folder listing failed for'+ path+ '-- assumed empty:'+ str(err))
+#         return []
+#     if res.has_more == True:
+#         print('HAS MORE ++++++++++++++++++++++++++++++')
+#     rv = []
+#     for entry in res.entries:
+#         if isinstance(entry, dropbox.files.FolderMetadata):
+#             rv.append(entry.path_lower)
+#     rv.sort()
+#     return rv
+    # try:
+    #     res = dbx.files_list_folder(d)
+    # except dropbox.exceptions.ApiError as err:
+    #     notify('Folder listing failed -- assumed empty: %s' % str(err))
+    #     return []
+    # else:
+    #     rv = []
+    #     for entry in res.entries:
+    #         if isinstance(entry, dropbox.files.FolderMetadata):
+    #             f = d+os.path.sep+entry.name
+    #             rv.append(f[1:].lower())
+    #             if 'sync_depth' in cfga and cfga['sync_depth'] > level:
+    #                 rv = rv + list_remote_folders(f, level+1)
+    #     return rv
 
 
 def do_help_menu(w):
@@ -1223,9 +1277,13 @@ def update_config(data):
             json.dump(data, outfile)
     load_config()
 
-def dropbox_connect():
-    global dbx
-    dbx = dropbox.Dropbox(cfga['token'])
+def connect_dbx(token):
+    dbx = dropbox.Dropbox(token, timeout=300)
+    try:
+        dbx.users_get_current_account()
+    except AuthError as err:
+        sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
+    return dbx
 
 def ui_init():
     global loop
