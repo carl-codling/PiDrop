@@ -49,6 +49,7 @@ def main():
     global rootdir
     global path_list
     global flist
+    global dbx
 
     path_list = {}
 
@@ -72,7 +73,7 @@ def main():
 
     rootdir = cfga['rootdir'].rstrip('/')
     
-    connect_dbx()
+    dbx = connect_dbx(cfga['token'])
 
     if args.funct == 'cfg':
         piboxd()
@@ -96,21 +97,16 @@ def main():
     dblog('END')
     return
 
-def connect_dbx():
-    global dbx
-    dbx = dropbox.Dropbox(cfga['token'], timeout=300)
-    try:
-        dbx.users_get_current_account()
-    except AuthError as err:
-        sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
+
 
 def setup():
+    global dbx
     token = input('Enter your Dropbox API token: ')
     if len(token.strip()):
         cfga['token'] = token.strip()
         format_outp('token set', 'success')
         format_outp('Attempting to connect...', 'blue')
-        connect_dbx()
+        dbx = connect_dbx(cfga['token'])
         format_outp('Connected', 'success')
     else:
         format_outp('please enter a Dropbox API token!', 'fail')
