@@ -296,15 +296,21 @@ class PiboxTreeWidget(urwid.TreeWidget):
     
     def path_details(self):
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        out = '\nFull path: '+location
+        l = []
+        if location in flist:
+            l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'success'))
+        else:
+            l.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'error'))
+        l.append(urwid.Text('Full path: '+location))
         if os.path.isfile(location):
             fsize = os.path.getsize(location)
-            out += '\nSize: '+readable_bytes(fsize)
-        fdetails.set_text(out)
-        more_details.set_text('')
+            l.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        fdetails.original_widget = urwid.ListBox(l)
+
 
     def more_path_details(self):
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+        l = []
         if os.path.isdir(location):
             fsize = 0
             nfiles = 0
@@ -313,12 +319,13 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            more_details.set_text('Size: %s (in %d files)\n' % (readable_bytes(fsize),nfiles))
+            l.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
         else:
             mod = time.ctime(os.path.getmtime(location))
             typ = subprocess.check_output(['file', '--mime-type', location])
-            more_details.set_text('Last modified: %s \nFile type: %s' % (str(mod), typ[len(location)+2:]))
-
+            l.append(urwid.Text('Last modified: %s' % (str(mod))))
+            l.append(urwid.Text('File type: %s' % (typ[len(location)+2:])))
+        more_details.original_widget = urwid.ListBox(l)
 
 
     def move_files(self, path, fname):
@@ -484,8 +491,38 @@ class ImporterTreeWidget(urwid.TreeWidget):
         
         if key in ["s", "S"]:
             self.add_to_selected(path+os.sep+fname)
+        elif key in ["p", "P"]:
+            self.more_path_details()
         else:
             return key
+
+    def path_details(self):
+        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+        l = []
+        l.append(urwid.Text('Full path: '+location))
+        if os.path.isfile(location):
+            fsize = os.path.getsize(location)
+            l.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        fdetails.original_widget = urwid.ListBox(l)
+
+    def more_path_details(self):
+        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+        l = []
+        if os.path.isdir(location):
+            fsize = 0
+            nfiles = 0
+            for (path, dirs, files) in os.walk(location):
+              for f in files:
+                nfiles += 1
+                fname = os.path.join(path, f)
+                fsize += os.path.getsize(fname)
+            l.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+        else:
+            mod = time.ctime(os.path.getmtime(location))
+            typ = subprocess.check_output(['file', '--mime-type', location])
+            l.append(urwid.Text('Last modified: %s' % (str(mod))))
+            l.append(urwid.Text('File type: %s' % (typ[len(location)+2:])))
+        more_details.original_widget = urwid.ListBox(l)
 
     def add_to_selected(self,p):
         global import_files;
@@ -548,6 +585,48 @@ class ExporterTreeWidget(urwid.TreeWidget):
 
     def selectable(self):
         return True
+
+    def keypress(self, size, key):
+        """allow subclasses to intercept keystrokes"""
+        key = self.__super.keypress(size, key)
+        if key:
+            key = self.unhandled_keys(size, key)
+        return key
+
+    def unhandled_keys(self, size, key):
+        if key in ["p", "P"]:
+            self.more_path_details()
+        else:
+            return key
+
+    def path_details(self):
+        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+        l = []
+        l.append(urwid.Text('Full path: '+location))
+        if os.path.isfile(location):
+            fsize = os.path.getsize(location)
+            l.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        fdetails.original_widget = urwid.ListBox(l)
+
+    def more_path_details(self):
+        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
+        l = []
+        if os.path.isdir(location):
+            fsize = 0
+            nfiles = 0
+            for (path, dirs, files) in os.walk(location):
+              for f in files:
+                nfiles += 1
+                fname = os.path.join(path, f)
+                fsize += os.path.getsize(fname)
+            l.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+        else:
+            mod = time.ctime(os.path.getmtime(location))
+            typ = subprocess.check_output(['file', '--mime-type', location])
+            l.append(urwid.Text('Last modified: %s' % (str(mod))))
+            l.append(urwid.Text('File type: %s' % (typ[len(location)+2:])))
+        more_details.original_widget = urwid.ListBox(l)
+
 
 class PiboxNode(urwid.TreeNode):
     """ Data storage object for leaf nodes """
@@ -855,23 +934,23 @@ def get_pibox_listbox():
 def get_importer_listbox():
     data = get_pibox_dir(cfga['import-dir'])[0]
     topnode = ImporterParentNode(data)
-    return  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'importer')
+    return  urwid.AttrWrap(urwid.TreeListBox(PiboxWalker(topnode)), 'importer')
 
 def get_exporter_listbox():
     data = get_pibox_dir(cfga['export-dir'])[0]
     topnode = ExporterParentNode(data)
-    return  urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'exporter')
+    return  urwid.AttrWrap(urwid.TreeListBox(PiboxWalker(topnode)), 'exporter')
 
 def more_details(w):
     listbox.original_widget.body.focus.get_widget().more_path_details()
 
 def readable_bytes(b):
     if b < (1024*1024):
-        out = ' %0.1f KB' % (b/1024.0)
+        out = '%0.1f KB' % (b/1024.0)
     elif b < (1024*1024*1024):
-        out = ' %0.1f MB' % (b/(1024*1024.0))
+        out = '%0.1f MB' % (b/(1024*1024.0))
     else:
-        out = ' %0.1f GB' % (b/(1024*1024*1024.0))
+        out = '%0.1f GB' % (b/(1024*1024*1024.0))
     return out
 
 def dir_stats(d):
@@ -890,7 +969,7 @@ def construct_importer_listbox():
     # Importer folder browser elements
     importer_listbox =  get_importer_listbox()
     stats = dir_stats(cfga['import-dir'])
-    empty_importer_button = urwid.Button('Empty Import folder (%s in %d files)' % (stats[0], stats[1]))
+    empty_importer_button = urwid.Button('Empty Import folder')
     urwid.connect_signal(empty_importer_button, 'click', empty_importer)
     footer = urwid.Padding(empty_importer_button, left=2, right=2)
     footer = urwid.Pile([divider,footer,divider])
@@ -907,7 +986,7 @@ def construct_exporter_listbox():
     # Export folder browser elements
     exporter_listbox =  get_exporter_listbox()
     stats = dir_stats(cfga['export-dir'])
-    empty_exporter_button = urwid.Button('Empty Export folder (%s in %d files)' % (stats[0], stats[1]))
+    empty_exporter_button = urwid.Button('Empty Export folder')
     urwid.connect_signal(empty_exporter_button, 'click', empty_exporter)
     footer = urwid.Padding(empty_exporter_button, left=2, right=2)
     footer = urwid.Pile([divider,footer,divider])
@@ -922,18 +1001,12 @@ def construct_properties_box():
     global fdetails
     global more_details
     global fdetails_container
-    fdetails = urwid.Text('')
-    more_details_btn = urwid.Button('More Properties')
-    urwid.connect_signal(more_details_btn, 'click', more_details)
-    more_details = urwid.Text('')
-    d = urwid.AttrWrap(urwid.Padding(urwid.ListBox([fdetails,more_details]), left=2, right=2),'details')
-    footer = urwid.Padding(more_details_btn, left=2, right=2)
-    footer = urwid.Pile([divider,footer,divider])
-    footer = urwid.AttrWrap(footer, 'footer')
+    fdetails = urwid.AttrWrap(urwid.ListBox([]),'details')
+    more_details = urwid.AttrWrap(urwid.ListBox([]),'details')
+    plists = urwid.Pile([fdetails,more_details])
     fdetails_container = urwid.Frame(
-        d,
-        header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header'),
-        footer=urwid.AttrWrap(footer, 'footer')
+        urwid.Padding(plists, left=2, right=2),
+        header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header')
     )
 
 def construct_browser_right_column():
@@ -942,7 +1015,18 @@ def construct_browser_right_column():
     construct_exporter_listbox()
     construct_properties_box()
     #c = urwid.Terminal(['sudo', 'tail', '-f', '/home/pi/PiDrop/pibox.log'])
-    right_column = urwid.AttrWrap(urwid.Padding(urwid.Pile([('pack',divider),urwid.LineBox(fdetails_container),urwid.LineBox(importer_container),urwid.LineBox(exporter_container)]),right=1),'body')
+    right_column = urwid.AttrWrap(
+        urwid.Padding(
+            urwid.Pile([
+                ('pack',divider),
+                urwid.LineBox(fdetails_container),
+                urwid.LineBox(importer_container),
+                urwid.LineBox(exporter_container)]
+            ),
+            right=1
+        ),
+        'body'
+    )
 
 def construct_browser_main_column():
     global listbox
@@ -1060,7 +1144,6 @@ def do_config_menu_dirs(w):
 
 def style_btn(btn):
     return urwid.AttrWrap(btn,'button', 'button focus')
-
 
 def config_save_dirs(w):
     if not os.path.isdir(cfgb['rootdir']):
@@ -1185,35 +1268,6 @@ def retrieve_folder_list(cursor=None):
     folders.sort()
     return folders
 
-# def list_remote_folders(d='', level=1):
-#     try:
-#         res = dbx.files_list_folder('', recursive=True)
-#     except dropbox.exceptions.ApiError as err:
-#         dblog('Folder listing failed for'+ path+ '-- assumed empty:'+ str(err))
-#         return []
-#     if res.has_more == True:
-#         print('HAS MORE ++++++++++++++++++++++++++++++')
-#     rv = []
-#     for entry in res.entries:
-#         if isinstance(entry, dropbox.files.FolderMetadata):
-#             rv.append(entry.path_lower)
-#     rv.sort()
-#     return rv
-    # try:
-    #     res = dbx.files_list_folder(d)
-    # except dropbox.exceptions.ApiError as err:
-    #     notify('Folder listing failed -- assumed empty: %s' % str(err))
-    #     return []
-    # else:
-    #     rv = []
-    #     for entry in res.entries:
-    #         if isinstance(entry, dropbox.files.FolderMetadata):
-    #             f = d+os.path.sep+entry.name
-    #             rv.append(f[1:].lower())
-    #             if 'sync_depth' in cfga and cfga['sync_depth'] > level:
-    #                 rv = rv + list_remote_folders(f, level+1)
-    #     return rv
-
 
 def do_help_menu(w):
     footer = urwid.AttrWrap(urwid.Text('[B]ack to main menu | [F]ile browser | [C]onfig | [Q]uit'), 'footer')
@@ -1296,9 +1350,3 @@ def ui_init():
     loop.run()
 
 
-
-
-
-
-# if __name__=="__main__":
-#     ui_main()
