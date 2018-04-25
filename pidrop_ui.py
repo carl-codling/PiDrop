@@ -21,7 +21,7 @@ import os
 import fnmatch
 import json
 import time
-from datetime import datetime
+import datetime
 import unicodedata
 import six
 import urwid
@@ -296,7 +296,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     
     def path_details(self):
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        l = []
+        l = [urwid.Text('')]
         if location in flist:
             l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'success'))
         else:
@@ -917,8 +917,8 @@ def build_pibox_list(dir='*'):
 
     if dir in ['*', 'exporter']:
         exporter_listbox.original_widget = get_exporter_listbox()
-    fdetails.set_text('')
-    more_details.set_text('')
+    fdetails.original_widget = urwid.ListBox([])
+    more_details.original_widget = urwid.ListBox([])
  
 def get_pibox_listbox():
     load_synced_file_list()
@@ -1001,11 +1001,11 @@ def construct_properties_box():
     global fdetails
     global more_details
     global fdetails_container
-    fdetails = urwid.AttrWrap(urwid.ListBox([]),'details')
+    fdetails = urwid.AttrWrap(urwid.ListBox([urwid.Text('file and folder details will appear here')]),'details')
     more_details = urwid.AttrWrap(urwid.ListBox([]),'details')
     plists = urwid.Pile([fdetails,more_details])
     fdetails_container = urwid.Frame(
-        urwid.Padding(plists, left=2, right=2),
+        urwid.AttrWrap(urwid.Padding(plists, left=2, right=2),'details'),
         header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header')
     )
 
@@ -1249,7 +1249,7 @@ def update_folder_list(d):
     folders = retrieve_folder_list()
     cfga['all_remote_folders'] = {
         'folders':folders,
-        'upd':str(datetime.now())
+        'upd':str(datetime.datetime.now())
     }
     update_config(cfga)
     do_config_menu_sync(None)
