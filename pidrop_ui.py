@@ -150,6 +150,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 return u"\u25CF " + flist[fpath]
             elif self.sync_status == 'syncing':
                 return u"\u25D4 " + self.get_node().get_value()['name']
+            elif self.sync_status == 'partially synced':
+                return u"\u25D6 " + self.get_node().get_value()['name']
             else:
                 return u"\u25CB " + self.get_node().get_value()['name']
     def selectable(self):
@@ -301,12 +303,15 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def path_details(self):
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         l = [urwid.Text('')]
-        if self.sync_status == 'synced':
-            l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'success'))
-        elif self.sync_status == 'syncing':
-            l.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'body'))
-        else:
-            l.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'error'))
+        if(hasattr(self, 'sync_status')):
+            if self.sync_status == 'synced':
+                l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'success'))
+            elif self.sync_status == 'syncing':
+                l.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'body'))
+            elif self.sync_status == 'partially synced':
+                l.append(urwid.AttrWrap(urwid.Text('[ PARTIALLY SYNCED ]'),'body'))
+            else:
+                l.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'error'))
         l.append(urwid.Text('Full path: '+location))
         if os.path.isfile(location):
             fsize = os.path.getsize(location)
@@ -835,6 +840,9 @@ def get_sync_status(path):
     if path in flist:
         return 'synced'
     else:
+        if os.path.isdir(path) and fnmatch.filter(flist, path+os.sep+'*'):
+            return 'partially synced'
+
         reduced_path = path[len(cfga['rootdir']):]
         fparts = reduced_path.split(os.sep)
         p = ''
