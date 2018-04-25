@@ -49,8 +49,7 @@ def main():
     global rootdir
     global path_list
     global flist
-    global dbx
-
+    
     path_list = {}
 
     args = parser.parse_args()
@@ -73,7 +72,7 @@ def main():
 
     rootdir = cfga['rootdir'].rstrip('/')
     
-    dbx = connect_dbx(cfga['token'])
+    connect_dropbox()
 
     if args.funct == 'cfg':
         piboxd()
@@ -106,7 +105,7 @@ def setup():
         cfga['token'] = token.strip()
         format_outp('token set', 'success')
         format_outp('Attempting to connect...', 'blue')
-        dbx = connect_dbx(cfga['token'])
+        dbx = connect_dropbox()
         format_outp('Connected', 'success')
     else:
         format_outp('please enter a Dropbox API token!', 'fail')
@@ -468,6 +467,10 @@ def sync_local(folder):
     Find any files that aren't on Dropbox and upload them
     Should only run directly after downloading files have finished syncing ie. syncbox()
     """
+    if 'large_upload_size' in cfga:
+        large_upload_size = cfga['large_upload_size']
+    else:
+        large_upload_size = 10
     flist = path_list[folder]
     for dn, dirs, files in os.walk(rootdir+'/'+folder):
         subfolder = dn[len(rootdir):].strip(os.path.sep)
@@ -487,7 +490,7 @@ def sync_local(folder):
             elif fullname not in flist:
                 dblog('uploading : '+fullname)
                 size = os.path.getsize(fullname)
-                if size < 20 * 1024 *1024:
+                if size < int(large_upload_size) * 1024 *1024:
                     upload(fullname)    
                 else:
                     upload_large(fullname)
@@ -560,6 +563,11 @@ def upload(path, overwrite=False):
 
 def upload_large(path, overwrite=False):
 
+    if 'chunk_size' in cfga:
+        chunk = cfga['chunk_size']
+    else:
+        chunk = 10
+
     mode = (dropbox.files.WriteMode.overwrite
             if overwrite
             else dropbox.files.WriteMode.add)
@@ -573,7 +581,7 @@ def upload_large(path, overwrite=False):
 
     dblog('UPLOAD LARGE FILE :: '+readable_bytes(file_size)+' '+target)
 
-    CHUNK_SIZE = 4 * 1024 * 1024
+    CHUNK_SIZE = int(chunk) * 1024 * 1024
 
     if file_size <= CHUNK_SIZE:
 
@@ -612,7 +620,18 @@ def upload_large(path, overwrite=False):
         return None
     flist[new_path] = fname
     
-
+def connect_dropbox():
+    global dbx
+    if 'connection_tout' in cfga:
+        tout = cfga['connection_tout']
+    else:
+        tout = 30
+    dbx = dropbox.Dropbox(cfga['token'], timeout=int(tout))
+    try:
+        dbx.users_get_current_account()
+    except:
+        sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
+    return dbx
 
 def piboxd():
     print("""

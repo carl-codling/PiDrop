@@ -17,6 +17,7 @@ __/\\\\\\\\\\\\\__________/\\\\\\\\\\\\_________________________________________
 """
 
 from __future__ import print_function
+import sys
 import os
 import fnmatch
 import json
@@ -1121,7 +1122,7 @@ def do_filebrowser(w):
     search_term = None
     file_mode = None
     collapse_cache = {}
-    dbx = connect_dbx(cfga['token'])
+    dbx = connect_dbx()
     construct_browser_right_column()
     construct_browser_main_column()
     construct_browser_mainview()
@@ -1131,7 +1132,7 @@ def do_config_menu(w):
     global cfgtitle
     global errbox
     global dbx
-    dbx = connect_dbx(cfga['token'])
+    dbx = connect_dbx()
     footer = urwid.AttrWrap(urwid.Text('[B]ack to main menu | [F]ile browser | [H]elp | [Q]uit'), 'footer')
     footer = urwid.Pile([divider,footer,divider])
     footer = urwid.Padding(footer, left=2, right=2)
@@ -1143,9 +1144,12 @@ def do_config_menu(w):
     urwid.connect_signal(opt_sync,'click',do_config_menu_sync)
     opt_theme = urwid.Button('Select a theme')
     urwid.connect_signal(opt_theme,'click',do_config_menu_theme)
+    opt_updown = urwid.Button('Upload/download settings')
+    urwid.connect_signal(opt_updown,'click',do_config_menu_updown)
+
     back = urwid.Button('Back')
     urwid.connect_signal(back,'click',do_welcome_screen)
-    config_list = urwid.AttrWrap(urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_theme),divider,style_btn(back)]), 'body')
+    config_list = urwid.AttrWrap(urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_updown),style_btn(opt_theme),divider,style_btn(back)]), 'body')
     pile = MainContainer([('pack',divider),('pack',cfgtitle),('pack',divider), config_list])
     mainview.original_widget = urwid.AttrWrap(urwid.Frame(
         urwid.Padding(pile, left=5, right=5, width=120, align='center'),
@@ -1153,15 +1157,50 @@ def do_config_menu(w):
         footer=footer
     ),'body')
 
+
+def do_config_menu_updown(w):
+    global cfgb
+    cfgb = cfga
+    cfg_menu = []
+    if 'connection_tout' not in cfgb:
+        cfgb['connection_tout'] = 30
+    if 'large_upload_size' not in cfgb:
+        cfgb['large_upload_size'] = 100
+    if 'chunk_size' not in cfgb:
+        cfgb['chunk_size'] = 10
+    connection_tout = urwid.IntEdit('Connection timeout:', cfgb['connection_tout'])
+    urwid.connect_signal(connection_tout,'change',change_temp_cfg, 'connection_tout')
+    conn_row = urwid.Columns([(26,connection_tout),(7,urwid.Text('seconds'))])
+    cfg_menu.append(conn_row)
+    cfg_menu.append(divider)
+    large_upl_n = urwid.IntEdit('Split uploads larger than [ ', cfgb['large_upload_size'])
+    urwid.connect_signal(large_upl_n,'change',change_temp_cfg, 'large_upload_size')
+    chunk = urwid.IntEdit('in to [ ', cfgb['chunk_size'])
+    urwid.connect_signal(chunk,'change',change_temp_cfg, 'chunk_size')
+    chunkn_row = urwid.Columns([(33,large_upl_n),(7,urwid.Text('MB ] ')), (11,chunk), (12,urwid.Text('MB ] chunks '))])
+    cfg_menu.append(chunkn_row)
+    cfg_menu.append(divider)
+    save = urwid.Button('Save and exit')
+    urwid.connect_signal(save,'click',config_save_updown)
+    back = urwid.Button('Exit without saving')
+    urwid.connect_signal(back,'click',do_config_menu)
+    cfg_menu.append(style_btn(save))
+    cfg_menu.append(style_btn(back))
+    config_list.original_widget = urwid.ListBox(cfg_menu)
+
+def config_save_updown(w):
+    update_config(cfgb)
+    do_config_menu(None)
+
 def do_config_menu_dirs(w):
     global cfgb
     cfgb = cfga
     root_dir = urwid.Edit('PiDrop Root Directory: ', cfgb['rootdir'])
-    urwid.connect_signal(root_dir,'change',change_dir, 'rootdir')
+    urwid.connect_signal(root_dir,'change',change_temp_cfg, 'rootdir')
     import_dir = urwid.Edit('Imports Directory: ', cfgb['import-dir'])
-    urwid.connect_signal(import_dir,'change',change_dir, 'import-dir')
+    urwid.connect_signal(import_dir,'change',change_temp_cfg, 'import-dir')
     export_dir = urwid.Edit('Exports Directory: ', cfgb['export-dir'])
-    urwid.connect_signal(export_dir,'change',change_dir, 'export-dir')
+    urwid.connect_signal(export_dir,'change',change_temp_cfg, 'export-dir')
     save = urwid.Button('Save and exit')
     urwid.connect_signal(save,'click',config_save_dirs)
     back = urwid.Button('Exit without saving')
@@ -1185,8 +1224,8 @@ def config_save_dirs(w):
         update_config(cfgb)
         do_config_menu(None)
 
-def change_dir(w, dirpath, dirname):
-    cfgb[dirname] = dirpath
+def change_temp_cfg(w, v, setting):
+    cfgb[setting] = v
 
 def do_config_menu_sync(w):
     if 'all_remote_folders' in cfga:
@@ -1360,11 +1399,16 @@ def update_config(data):
             json.dump(data, outfile)
     load_config()
 
-def connect_dbx(token):
-    dbx = dropbox.Dropbox(token, timeout=300)
+def connect_dbx():
+    global dbx
+    if 'connection_tout' in cfga:
+        tout = cfga['connection_tout']
+    else:
+        tout = 30
+    dbx = dropbox.Dropbox(cfga['token'], timeout=int(tout))
     try:
         dbx.users_get_current_account()
-    except AuthError as err:
+    except:
         sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
     return dbx
 
