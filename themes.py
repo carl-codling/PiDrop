@@ -22,7 +22,10 @@ palettes = {
             ('error', 'light red', 'light gray'),
             ('success', 'light green', 'white'),
             ('button', 'dark blue', 'light gray'),
-            ('button focus', 'light blue', 'white')
+            ('button focus', 'light blue', 'white'),
+            ('sync', 'dark green,bold', 'light gray'),
+            ('unsync', 'dark blue', 'light gray'),
+            ('nosync', 'white', 'light gray')
         ],
         'dark':[
             ('body', 'light gray', 'black'),
@@ -45,7 +48,10 @@ palettes = {
             ('error', 'light red', 'black'),
             ('success', 'black', 'light green'),
             ('button', 'light gray', 'dark blue'),
-            ('button focus', 'dark magenta', 'white')
+            ('button focus', 'dark magenta', 'white'),
+            ('sync', 'dark green,bold', 'black'),
+            ('unsync', 'dark blue', 'black'),
+            ('nosync', 'dark gray', 'black')
         ],
         'system defaults':[
             ('body', 'default', 'default'),
@@ -68,6 +74,9 @@ palettes = {
             ('error', 'default', 'default'),
             ('success', 'default,bold', 'default'),
             ('button', 'default', 'default'),
-            ('button focus', 'default', 'default')
+            ('button focus', 'default', 'default'),
+            ('sync', 'default', 'default'),
+            ('unsync', 'default', 'default'),
+            ('nosync', 'default', 'default')
         ]
     }

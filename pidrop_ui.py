@@ -139,22 +139,21 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 self._w.attr = 'dir'
                 self._w.focus_attr = 'dir focus'
 
-    def get_display_text(self):
+    def load_inner_widget(self):
         path = self.get_node().get_value()['path']
         name = self.get_node().get_value()['name']
         fpath = path+os.sep+name
         if self.get_node().get_depth()<1:
-            return name
+            return urwid.Text(name)
         else:
-            self.sync_status = get_sync_status(fpath)
-            if self.sync_status == 'synced':
-                return u"\u25CF " + flist[fpath]
-            elif self.sync_status == 'syncing':
-                return u"\u25D4 " + self.get_node().get_value()['name']
-            elif self.sync_status == 'partially synced':
-                return u"\u25D6 " + self.get_node().get_value()['name']
+            self.sync_status = self.get_node().get_value()['sync']
+            if self.sync_status == 'sync':
+                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CF"),'sync')),urwid.Text(flist[fpath])])
+            elif self.sync_status == 'unsync':
+                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CB"),'unsync')),urwid.Text(name)])
             else:
-                return u"\u25CB " + self.get_node().get_value()['name']
+                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25A2"),'nosync')),urwid.Text(name)])
+
     def selectable(self):
         return True
 
@@ -305,14 +304,12 @@ class PiboxTreeWidget(urwid.TreeWidget):
         location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
         l = [urwid.Text('')]
         if(hasattr(self, 'sync_status')):
-            if self.sync_status == 'synced':
-                l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'success'))
-            elif self.sync_status == 'syncing':
-                l.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'body'))
-            elif self.sync_status == 'partially synced':
-                l.append(urwid.AttrWrap(urwid.Text('[ PARTIALLY SYNCED ]'),'body'))
+            if self.sync_status == 'sync':
+                l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'sync'))
+            elif self.sync_status == 'unsync':
+                l.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'unsync'))
             else:
-                l.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'error'))
+                l.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'nosync'))
         l.append(urwid.Text('Full path: '+location))
         if os.path.isfile(location):
             fsize = os.path.getsize(location)
@@ -837,24 +834,6 @@ class MainContainer(urwid.Pile):
         else:
             return key
 
-def get_sync_status(path):
-    if path in flist:
-        return 'synced'
-    else:
-        if os.path.isdir(path) and fnmatch.filter(flist, path+os.sep+'*'):
-            return 'partially synced'
-
-        reduced_path = path[len(cfga['rootdir']):]
-        fparts = reduced_path.split(os.sep)
-        p = ''
-        for part in fparts:
-            p = p+part
-            p = p.strip(os.sep)
-            if p in cfga['folders']:
-                return 'syncing'
-        return 'not synced'
-
-
 def empty_importer(i):
     for the_file in os.listdir(cfga['import-dir']):
         file_path = os.path.join(cfga['import-dir'], the_file)
@@ -886,6 +865,7 @@ def get_pibox_dir(rootdir):
     """
     Creates a nested dictionary that represents the folder structure of rootdir
     """
+    load_synced_file_list()
     dir = {}
     rootdir = rootdir.rstrip(os.sep)
     start = rootdir.rfind(os.sep) + 1
@@ -896,17 +876,65 @@ def get_pibox_dir(rootdir):
         parent[folders[-1]] = subdir
     return format_pibox_dir(dir, rootdir[:-len(rootdir)+start-1])
     
-def format_pibox_dir(dir, path):
+def format_pibox_dir(dir, path, overide_sync_check=False):
     out=[]
+    rpath = ''
     for k,v in dir.items():
+        osc = overide_sync_check
+        fpath = path+os.sep+k
+        if overide_sync_check:
+            sync = 'override'
+        elif os.path.isdir(path+os.sep+k):
+            if fpath not in flist and not fnmatch.filter(flist, fpath+os.sep+'*'):
+                # No dirs or subdirs are being synced
+                # Override any checks in sub dirs
+                sync = 'nosync'
+                osc = True
+            elif path_has_unsynced_children(fpath):
+                sync = 'unsync'
+            else:
+                sync = 'sync'
+        elif os.path.isfile(fpath) and fpath in flist:
+            sync = 'sync'
+        else:
+            if path_has_synced_parent(fpath):
+                sync = 'unsync'
+            else:
+                sync = 'nosync'
+
         children = []
         if(v):
-            children=format_pibox_dir(v,path+os.sep+k)
-        o = {'name':k, 'path':path}
+            children=format_pibox_dir(v,fpath,osc)
+        o = {'name':k, 'path':path, 'sync':sync}
         if len(children) > 0:
             o['children']  = children
         out.append(o)
     return out
+
+def path_has_synced_parent(p):
+    rlen = len(cfga['rootdir'])
+    rpath = p[rlen:]
+    parts = rpath.split(os.sep)
+    op = ''
+    for part in parts:
+        op = op+os.sep+part
+        op = op.strip(os.sep)
+        if op in cfga['folders']:
+            return True
+    return False
+
+
+def path_has_unsynced_children(p):
+    for path, dirs, files in os.walk(p):
+        for f in files:
+            fullname = os.path.join(path, f)
+            if fullname not in flist:
+                return True
+        for d in dirs:
+            fullname = os.path.join(path, d)
+            if fullname not in flist:
+                return True
+    return False
 
 def notify(msg, attr='notif'):
     close = urwid.Button('X')
@@ -951,7 +979,6 @@ def build_pibox_list(dir='*'):
     more_details.original_widget = urwid.ListBox([])
  
 def get_pibox_listbox():
-    load_synced_file_list()
     if search_term:
         data = get_search_list()
     else:
@@ -1386,7 +1413,6 @@ def do_welcome_screen(w):
 def load_config():
     global dir_path
     global cfga
-    global flist
     dir_path = os.path.dirname(os.path.realpath(__file__))
     if not os.path.isfile(dir_path+'/cfg.json'):
         update_config({"export-dir": "", "folders": [], "import-dir": "", "rootdir": "", "token": ""})
