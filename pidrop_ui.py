@@ -1168,6 +1168,8 @@ def do_config_menu_updown(w):
         cfgb['large_upload_size'] = 100
     if 'chunk_size' not in cfgb:
         cfgb['chunk_size'] = 10
+    if 'daily_limit' not in cfgb:
+        cfgb['daily_limit'] = 0
     connection_tout = urwid.IntEdit('Connection timeout:', cfgb['connection_tout'])
     urwid.connect_signal(connection_tout,'change',change_temp_cfg, 'connection_tout')
     conn_row = urwid.Columns([(26,connection_tout),(7,urwid.Text('seconds'))])
@@ -1179,6 +1181,11 @@ def do_config_menu_updown(w):
     urwid.connect_signal(chunk,'change',change_temp_cfg, 'chunk_size')
     chunkn_row = urwid.Columns([(33,large_upl_n),(7,urwid.Text('MB ] ')), (11,chunk), (12,urwid.Text('MB ] chunks '))])
     cfg_menu.append(chunkn_row)
+    cfg_menu.append(divider)
+    daily_limit = urwid.IntEdit('Daily upload/download limit: ', cfgb['daily_limit'])
+    urwid.connect_signal(daily_limit,'change',change_temp_cfg, 'daily_limit')
+    daily_row = urwid.Columns([(36,daily_limit), (19,urwid.Text('MB (0 = no limit) '))])
+    cfg_menu.append(daily_row)
     cfg_menu.append(divider)
     save = urwid.Button('Save and exit')
     urwid.connect_signal(save,'click',config_save_updown)

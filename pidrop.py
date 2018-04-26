@@ -49,7 +49,7 @@ def main():
     global rootdir
     global path_list
     global flist
-    
+
     path_list = {}
 
     args = parser.parse_args()
@@ -423,6 +423,11 @@ def download_file(data):
     """
     Download a file from Dropbox
     """
+    remaining_bwidth = get_remaining_daily_bandwidth()
+    if remaining_bwidth != 'unlimited' and data.size > remaining_bwidth:
+        dblog('SKIPPING DOWNLOAD - Downloading now would exceed the daily bandwidth limit')
+        return None
+
 
     local_path = '/'.join([rootdir, data.path_lower.strip('/')])
 
@@ -432,6 +437,7 @@ def download_file(data):
     except dropbox.exceptions.ApiError as err:
         dblog('*** API error: '+' - '+data.path_lower+' - '+str(err))
         return None 
+    register_bandwidth_usage(data.size)
     dblog('downloaded: ' + data.path_lower)
     md_tupl = time.strptime(str(data.client_modified), '%Y-%m-%d %H:%M:%S')
     md = time.mktime(md_tupl)
@@ -530,6 +536,12 @@ def upload(path, overwrite=False):
     """
     Upload a file to connected Dropbox acct.
     """
+    file_size = os.path.getsize(path)
+    remaining_bwidth = get_remaining_daily_bandwidth()
+    if remaining_bwidth != 'unlimited' and file_size > remaining_bwidth:
+        dblog('SKIPPING UPLOAD - Uploading now would exceed the daily bandwidth limit')
+        return None
+
     mode = (dropbox.files.WriteMode.overwrite
             if overwrite
             else dropbox.files.WriteMode.add)
@@ -547,7 +559,7 @@ def upload(path, overwrite=False):
     except dropbox.exceptions.ApiError as err:
         dblog('*** API error: '+ str(err))
         return None
-
+    register_bandwidth_usage(file_size)
     fname = os.path.basename(path)
     fname_lower = fname.lower()
     new_path = os.path.dirname(path)+os.sep+fname_lower
@@ -563,6 +575,8 @@ def upload(path, overwrite=False):
 
 def upload_large(path, overwrite=False):
 
+
+
     if 'chunk_size' in cfga:
         chunk = cfga['chunk_size']
     else:
@@ -574,6 +588,11 @@ def upload_large(path, overwrite=False):
 
     f = open(path)
     file_size = os.path.getsize(path)
+
+    remaining_bwidth = get_remaining_daily_bandwidth()
+    if remaining_bwidth != 'unlimited' and file_size > remaining_bwidth:
+        dblog('SKIPPING LARGE UPLOAD - Uploading now would exceed the daily bandwidth limit')
+        return None
 
     target = path[len(rootdir):]
     mtime = os.path.getmtime(path)
@@ -605,11 +624,14 @@ def upload_large(path, overwrite=False):
                                                                 commit))
             else:
                 dbx.files_upload_session_append(f.read(CHUNK_SIZE),
+
                                                 cursor.session_id,
                                                 cursor.offset)
                 nchunks += 1
                 dblog('ADDING '+readable_bytes(CHUNK_SIZE)+' CHUNK :: '+readable_bytes(CHUNK_SIZE*nchunks))
                 cursor.offset = f.tell()
+            register_bandwidth_usage(CHUNK_SIZE)
+
     fname = os.path.basename(path)
     fname_lower = fname.lower()
     new_path = os.path.dirname(path)+os.sep+fname_lower
@@ -620,6 +642,48 @@ def upload_large(path, overwrite=False):
         return None
     flist[new_path] = fname
     
+
+def register_bandwidth_usage(n):
+    today = datetime.datetime.now()
+    today = today.strftime("%Y-%m-%d")
+    if 'daily_usage' not in cfga or today != cfga['daily_usage']['date']:
+        dblog('Days don\'t match. Resetting')
+        cfga['daily_usage'] = {
+            'date':today,
+            'usage':n
+        }
+    else:
+        cfga['daily_usage']['usage'] = int(cfga['daily_usage']['usage'])+n
+    update_cfg(cfga)
+
+def get_remaining_daily_bandwidth():
+    if 'daily_limit' not in cfga:
+        return 'unlimited'
+    dl = int(cfga['daily_limit']) * 1024 * 1024
+    if 'daily_usage' not in cfga:
+        return dl
+
+    else:
+        today = datetime.datetime.now()
+        today = today.strftime("%Y-%m-%d")
+        if today != cfga['daily_usage']['date']:
+            cfga['daily_usage'] = {
+                'date':today,
+                'usage':0
+            }
+            update_cfg(cfga)
+            return dl
+        else:
+            return dl - int(cfga['daily_usage']['usage'])
+
+def update_cfg(data):
+    global cfga
+    with open(dir_path+'/cfg.json', 'w') as outfile:  
+            json.dump(data, outfile)
+    load_config()
+    cfga = data
+
+
 def connect_dropbox():
     global dbx
     if 'connection_tout' in cfga:
