@@ -39,8 +39,8 @@ class PiBoxSearchInput(urwid.Edit):
     def keypress(self, size, key):
         key = self.__super.keypress(size, key)
         if key == 'enter':
-            build_pibox_list('pibox')
-            self.set_edit_text('')
+            build_search_list()
+            #self.set_edit_text('')
         elif key == 'esc':
             keys.set_text(keys_default_text)
             build_pibox_list()
@@ -144,7 +144,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def load_inner_widget(self):
         if self.get_node().get_depth()<1:
             return urwid.Text(self.name)
-        else:
+        elif 'sync' in self.get_node().get_value():
             self.sync_status = self.get_node().get_value()['sync']
             if self.sync_status == 'sync':
                 return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CF"),'sync')),urwid.Text(flist[self.full_path]['name'])])
@@ -152,6 +152,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CB"),'unsync')),urwid.Text(self.name)])
             else:
                 return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25A2"),'nosync')),urwid.Text(self.name)])
+        else:
+            return urwid.Text(self.name)
 
     def selectable(self):
         return True
@@ -263,7 +265,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
         if len(selected_files) > 0:
             file_mode = 'move'
-            keys.set_text('Press [ENTER] to confirm moving the selected files to this location')
+            keys.set_text('Select (focus) the destination and hit [ENTER] to confirm moving the selected files')
         else:
             file_mode = None
             notify('No files selected!', 'error')
@@ -293,6 +295,9 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
     def path_details(self):
         global path_details_list
+        if self.path == '[[SEARCH]]':
+            fdetails.original_widget = urwid.ListBox([])
+            return
         path_details_list = [urwid.Text('')]
         if(hasattr(self, 'sync_status')):
             if self.sync_status == 'sync':
@@ -309,6 +314,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
 
 
     def more_path_details(self):
+        if self.path == '[[SEARCH]]':
+            return
         if os.path.isdir(self.full_path):
             fsize = 0
             nfiles = 0
@@ -961,7 +968,7 @@ def get_search_list():
             if fnmatch.fnmatch(name.lower(), pattern):
                 result.append({'name':name,'path':root})
 
-    return {'name':'Search Results for ['+search_term+']:', 'path':cfga['rootdir'], 'children':result}
+    return {'name':'Search Results for ['+search_term+']:', 'path':'[[SEARCH]]', 'children':result}
 
 def build_pibox_list(dir='*'):
     if dir in ['*', 'pibox']:
@@ -972,14 +979,44 @@ def build_pibox_list(dir='*'):
 
     if dir in ['*', 'exporter']:
         exporter_listbox.original_widget = get_exporter_listbox()
+
+    if 'search_term' in globals() and search_term != None:
+        search_listbox.original_widget = get_search_listbox()
+
     fdetails.original_widget = urwid.ListBox([])
-    more_details.original_widget = urwid.ListBox([])
+
+def get_search_listbox():
+    data = get_search_list()
+    topnode = PiboxParentNode(data)
+    walker = PiboxWalker(topnode)
+    return urwid.AttrWrap(urwid.TreeListBox(walker),'body')
+
+def build_search_list():
+    global search_listbox
+    search_listbox =  get_search_listbox()
+    close_search = urwid.Button('close')
+    urwid.connect_signal(close_search, 'click', clear_search_list)
+    main_browser.original_widget = urwid.Pile([
+        ('pack',messages),
+        urwid.Padding(listbox, left=1, right=1),
+        ('pack',divider),
+        urwid.Padding(urwid.AttrWrap(urwid.LineBox(urwid.Columns([search_listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
+        ('pack',divider),
+        ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
+    ],3)
+
+def clear_search_list(d):
+    global search_term
+    search_term = None
+    main_browser.original_widget = urwid.Pile([
+        ('pack',messages),
+        urwid.Padding(listbox, left=1, right=1),
+        ('pack',divider),
+        ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
+    ])
 
 def get_pibox_listbox():
-    if search_term:
-        data = get_search_list()
-    else:
-        data = get_pibox_dir(cfga['rootdir'])[0]
+    data = get_pibox_dir(cfga['rootdir'])[0]
     topnode = PiboxParentNode(data)
     walker = PiboxWalker(topnode)
     #urwid.connect_signal(walker, 'modified', walking)
@@ -1092,6 +1129,7 @@ def construct_browser_main_column():
 def construct_browser_mainview():
     global keys
     global mainview
+    global main_browser
     global messages
     # notifications bar
     keys = urwid.AttrWrap(urwid.Text(keys_default_text), 'footer')
@@ -1101,13 +1139,13 @@ def construct_browser_mainview():
 
     messages = urwid.AttrWrap(urwid.Text(''), 'body')
 
-    main_section = urwid.Pile([
+    main_browser = urwid.AttrWrap(urwid.Pile([
         ('pack',messages),
         urwid.Padding(listbox, left=1, right=1),
         ('pack',divider),
         ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
-    ])
-    cols = MainContainer([urwid.Columns([('weight', 3,main_section), right_column])])
+    ]),'body')
+    cols = MainContainer([urwid.Columns([('weight', 3,main_browser), right_column])])
     mainview.original_widget = urwid.Frame(
         cols,
         header=urwid.AttrWrap(header, 'head'),
@@ -1141,7 +1179,6 @@ def do_filebrowser(w):
     selected_files = []
     import_files = []
     new_dir_location = None
-    search_term = None
     file_mode = None
     collapse_cache = {}
     dbx = connect_dbx()
