@@ -447,6 +447,16 @@ def download_file(data):
         dblog('Could not update file modification time: '+str(e))
         return None
 
+def dbx_fetch_folder(folder, cursor=None):
+    if cursor is not None:
+        res = dbx.files_list_folder_continue(cursor)
+    else:
+        res = dbx.files_list_folder(folder, recursive=True, include_deleted=True,  include_media_info=True)
+    out = res.entries
+    if res.has_more:
+        out.extend(dbx_fetch_folder(folder, res.cursor))
+    return out
+
 def list_folder(folder):
     """
     fetch meta data contents of a Dropbox folder
@@ -454,32 +464,32 @@ def list_folder(folder):
     path_list[folder] = []
     path = folder.strip('/')
     path = '/'+path
-    try:
-        res = dbx.files_list_folder(path, recursive=True, include_deleted=True,  include_media_info=True)
-    except dropbox.exceptions.ApiError as err:
-        dblog('Folder listing failed for'+ path+ '-- assumed empty:'+ str(err))
-        return {}
-    else:
-        rv = {}
-        for entry in res.entries:
-            rv[entry.name] = entry
-            p = rootdir.rstrip('/')+'/'+entry.path_lower.strip('/')
-            path_list[folder].append(p)
-            flist[p] = {'name':os.path.basename(entry.path_display)}
-            if hasattr(entry, 'media_info') and entry.media_info != None:
-                dblog('################## HAS MEDIA INFO')
-                md = entry.media_info.get_metadata()
-                flist[p]['media_info'] = {}
-                if hasattr(md, 'time_taken') and md.time_taken != None:
-                    flist[p]['media_info']['Time taken: '] = str(md.time_taken)
-                if hasattr(md, 'duration') and md.duration != None:
-                    flist[p]['media_info']['Duration: '] = str(md.duration)
-                if hasattr(md, 'dimensions') and md.dimensions != None:
-                    flist[p]['media_info']['Dimensions: '] = str(md.dimensions.width) + 'x' + str(md.dimensions.height)
-                if hasattr(md, 'location') and md.location != None:
-                    flist[p]['media_info']['Location: '] = str(md.location.latitude)+', '+str(md.location.longitude)
+    # try:
+    #     res = dbx.files_list_folder(path, recursive=True, include_deleted=True,  include_media_info=True)
+    # except dropbox.exceptions.ApiError as err:
+    #     dblog('Folder listing failed for'+ path+ '-- assumed empty:'+ str(err))
+    #     return {}
+    entries = dbx_fetch_folder(path)
+    rv = {}
+    for entry in entries:
+        rv[entry.name] = entry
+        p = rootdir.rstrip('/')+'/'+entry.path_lower.strip('/')
+        path_list[folder].append(p)
+        flist[p] = {'name':os.path.basename(entry.path_display)}
+        if hasattr(entry, 'media_info') and entry.media_info != None:
+            dblog('################## HAS MEDIA INFO')
+            md = entry.media_info.get_metadata()
+            flist[p]['media_info'] = {}
+            if hasattr(md, 'time_taken') and md.time_taken != None:
+                flist[p]['media_info']['Time taken: '] = str(md.time_taken)
+            if hasattr(md, 'duration') and md.duration != None:
+                flist[p]['media_info']['Duration: '] = str(md.duration)
+            if hasattr(md, 'dimensions') and md.dimensions != None:
+                flist[p]['media_info']['Dimensions: '] = str(md.dimensions.width) + 'x' + str(md.dimensions.height)
+            if hasattr(md, 'location') and md.location != None:
+                flist[p]['media_info']['Location: '] = str(md.location.latitude)+', '+str(md.location.longitude)
 
-        return rv
+    return rv
 
 def sync_local(folder):
     """
@@ -490,7 +500,6 @@ def sync_local(folder):
         large_upload_size = cfga['large_upload_size']
     else:
         large_upload_size = 10
-    flist = path_list[folder]
     for dn, dirs, files in os.walk(rootdir+'/'+folder):
         subfolder = dn[len(rootdir):].strip(os.path.sep)
         dblog('Descending into: '+ subfolder+ '...')
@@ -506,7 +515,7 @@ def sync_local(folder):
                 dblog('Skipping temporary file: '+ name)
             elif name.endswith('.pyc') or name.endswith('.pyo'):
                 dblog('Skipping generated file: '+ name)
-            elif fullname not in flist:
+            elif fullname not in path_list[folder]:
                 dblog('uploading : '+fullname)
                 size = os.path.getsize(fullname)
                 if size < int(large_upload_size) * 1024 *1024:
@@ -525,7 +534,7 @@ def sync_local(folder):
                 dblog('Skipping temporary directory: '+ name)
             elif name == '__pycache__':
                 dblog('Skipping generated directory: '+ name)
-            elif fullname not in flist:
+            elif fullname not in path_list[folder]:
                 dblog('FOUND FOLDER NOT AT SERVER : '+fullname)
                 create_remote_folder(fullname)
             else:
