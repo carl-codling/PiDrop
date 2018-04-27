@@ -3,17 +3,17 @@
 """Download/sync/manage folders from Dropbox
 
 ---------------------------------------------------------------------------
-__/\\\\\\\\\\\\\__________/\\\\\\\\\\\\______________________________________________        
- _\/\\\/////////\\\_______\/\\\////////\\\____________________________________________       
-  _\/\\\_______\/\\\__/\\\_\/\\\______\//\\\_______________________________/\\\\\\\\\__      
-   _\/\\\\\\\\\\\\\/__\///__\/\\\_______\/\\\__/\\/\\\\\\\______/\\\\\_____/\\\/////\\\_     
-    _\/\\\/////////_____/\\\_\/\\\_______\/\\\_\/\\\/////\\\___/\\\///\\\__\/\\\\\\\\\\__    
-     _\/\\\_____________\/\\\_\/\\\_______\/\\\_\/\\\___\///___/\\\__\//\\\_\/\\\//////___   
-      _\/\\\_____________\/\\\_\/\\\_______/\\\__\/\\\_________\//\\\__/\\\__\/\\\_________  
-       _\/\\\_____________\/\\\_\/\\\\\\\\\\\\/___\/\\\__________\///\\\\\/___\/\\\_________ 
+__/\\\\\\\\\\\\\__________/\\\\\\\\\\\\______________________________________________
+ _\/\\\/////////\\\_______\/\\\////////\\\____________________________________________
+  _\/\\\_______\/\\\__/\\\_\/\\\______\//\\\_______________________________/\\\\\\\\\__
+   _\/\\\\\\\\\\\\\/__\///__\/\\\_______\/\\\__/\\/\\\\\\\______/\\\\\_____/\\\/////\\\_
+    _\/\\\/////////_____/\\\_\/\\\_______\/\\\_\/\\\/////\\\___/\\\///\\\__\/\\\\\\\\\\__
+     _\/\\\_____________\/\\\_\/\\\_______\/\\\_\/\\\___\///___/\\\__\//\\\_\/\\\//////___
+      _\/\\\_____________\/\\\_\/\\\_______/\\\__\/\\\_________\//\\\__/\\\__\/\\\_________
+       _\/\\\_____________\/\\\_\/\\\\\\\\\\\\/___\/\\\__________\///\\\\\/___\/\\\_________
         _\///______________\///__\////////////_____\///_____________\/////_____\///__________
 
-===========================================================================                                                           
+===========================================================================
 
 """
 
@@ -32,7 +32,7 @@ import json
 import urwid
 
 if sys.version.startswith('2'):
-    input = raw_input  
+    input = raw_input
 
 import dropbox
 
@@ -63,7 +63,7 @@ def main():
     if args.funct == 'ui':
         return ui_init()
 
-    with open(dir_path+'/cfg.json') as json_file: 
+    with open(dir_path+'/cfg.json') as json_file:
         cfga = json.load(json_file)
 
 
@@ -71,7 +71,7 @@ def main():
         return setup()
 
     rootdir = cfga['rootdir'].rstrip('/')
-    
+
     connect_dropbox()
 
     if args.funct == 'cfg':
@@ -113,9 +113,9 @@ def setup():
     if 'rootdir' not in cfga:
         setup_dirs()
 
-    with open(dir_path+'/cfg.json', 'w') as outfile:  
+    with open(dir_path+'/cfg.json', 'w') as outfile:
         json.dump(cfga, outfile)
-    f = open(dir_path+'/flist.json', 'w')   
+    f = open(dir_path+'/flist.json', 'w')
     f.write('{}')
     f.close()
     return ui_init()
@@ -164,7 +164,7 @@ def cfg(dbx, cfga, var=None):
         print('------------------')
         cfg(dbx, cfga)
     elif var == 'exit':
-        with open(dir_path+'/cfg.json') as json_file:  
+        with open(dir_path+'/cfg.json') as json_file:
             cfgb = json.load(json_file)
         if cfga != cfgb:
             conf = input('exit without saving? (y/n): ')
@@ -174,7 +174,7 @@ def cfg(dbx, cfga, var=None):
                 cfg(dbx, cfga)
         return
     elif var == 'save':
-        with open(dir_path+'/cfg.json', 'w') as outfile:  
+        with open(dir_path+'/cfg.json', 'w') as outfile:
             json.dump(cfga, outfile)
         cfg(dbx, cfga)
     elif var == 'dump':
@@ -281,7 +281,7 @@ def dblog(msg):
 
 def syncbox(folder):
     """
-    Get all synced folder data from dropbox and 
+    Get all synced folder data from dropbox and
     run checks to see if it needs updating
     """
     listing = list_folder(folder)
@@ -306,9 +306,9 @@ def syncbox(folder):
 
 def is_file_synced(data):
     """
-    Runs some comparisons on file data retrieved from Dropbox against local version. 
+    Runs some comparisons on file data retrieved from Dropbox against local version.
     If comparison fails delete any conflicting data and return False.
-    Otherwise return True 
+    Otherwise return True
     """
     local_path = '/'.join([rootdir, data.path_lower.strip('/')])
     # Is this path currently occupied by a dir?
@@ -347,9 +347,9 @@ def is_file_synced(data):
 
 def is_dir_in_local(data):
     """
-    Runs some comparisons on directory data retrieved from Dropbox against local version. 
+    Runs some comparisons on directory data retrieved from Dropbox against local version.
     If comparison fails delete any conflicting data and return False.
-    Otherwise return True 
+    Otherwise return True
     """
     local_path = '/'.join([rootdir, data.path_lower.strip('/')])
     if os.path.isfile(local_path):
@@ -377,9 +377,9 @@ def sync_deleted(data):
             os.remove(local_path)
         except Exception as e:
             dblog('Could not remove file: '+str(e))
-        
 
-    
+
+
 def sync_folder(data):
     """
     Create a new directory and any parent dirs found at Dropbox
@@ -436,7 +436,7 @@ def download_file(data):
         dbx.files_download_to_file(local_path, data.path_lower)
     except dropbox.exceptions.ApiError as err:
         dblog('*** API error: '+' - '+data.path_lower+' - '+str(err))
-        return None 
+        return None
     register_bandwidth_usage(data.size)
     dblog('downloaded: ' + data.path_lower)
     md_tupl = time.strptime(str(data.client_modified), '%Y-%m-%d %H:%M:%S')
@@ -455,7 +455,7 @@ def list_folder(folder):
     path = folder.strip('/')
     path = '/'+path
     try:
-        res = dbx.files_list_folder(path, recursive=True, include_deleted=True)
+        res = dbx.files_list_folder(path, recursive=True, include_deleted=True,  include_media_info=True)
     except dropbox.exceptions.ApiError as err:
         dblog('Folder listing failed for'+ path+ '-- assumed empty:'+ str(err))
         return {}
@@ -465,7 +465,20 @@ def list_folder(folder):
             rv[entry.name] = entry
             p = rootdir.rstrip('/')+'/'+entry.path_lower.strip('/')
             path_list[folder].append(p)
-            flist[p] = os.path.basename(entry.path_display)
+            flist[p] = {'name':os.path.basename(entry.path_display)}
+            if hasattr(entry, 'media_info') and entry.media_info != None:
+                dblog('################## HAS MEDIA INFO')
+                md = entry.media_info.get_metadata()
+                flist[p]['media_info'] = {}
+                if hasattr(md, 'time_taken') and md.time_taken != None:
+                    flist[p]['media_info']['Time taken: '] = str(md.time_taken)
+                if hasattr(md, 'duration') and md.duration != None:
+                    flist[p]['media_info']['Duration: '] = str(md.duration)
+                if hasattr(md, 'dimensions') and md.dimensions != None:
+                    flist[p]['media_info']['Dimensions: '] = str(md.dimensions.width) + 'x' + str(md.dimensions.height)
+                if hasattr(md, 'location') and md.location != None:
+                    flist[p]['media_info']['Location: '] = str(md.location.latitude)+', '+str(md.location.longitude)
+
         return rv
 
 def sync_local(folder):
@@ -497,10 +510,10 @@ def sync_local(folder):
                 dblog('uploading : '+fullname)
                 size = os.path.getsize(fullname)
                 if size < int(large_upload_size) * 1024 *1024:
-                    upload(fullname)    
+                    upload(fullname)
                 else:
                     upload_large(fullname)
-            else: 
+            else:
                 dblog('PATH EXISTS: '+fullname)
         # Then choose which subdirectories to traverse.
         keep = []
@@ -641,7 +654,7 @@ def upload_large(path, overwrite=False):
         dblog('*** OS error: '+ str(err))
         return None
     flist[new_path] = fname
-    
+
 
 def register_bandwidth_usage(n):
     today = datetime.datetime.now()
@@ -678,7 +691,7 @@ def get_remaining_daily_bandwidth():
 
 def update_cfg(data):
     global cfga
-    with open(dir_path+'/cfg.json', 'w') as outfile:  
+    with open(dir_path+'/cfg.json', 'w') as outfile:
             json.dump(data, outfile)
     load_config()
     cfga = data
@@ -699,14 +712,14 @@ def connect_dropbox():
 
 def piboxd():
     print("""
-__/\\\\\\\\\\\\\\\\\\\\\\\\\\__________/\\\\\\\\\\\\\\\\\\\\\\\\______________________________________________        
- _\\/\\\\\\/////////\\\\\\_______\\/\\\\\\////////\\\\\\____________________________________________       
-  _\\/\\\\\\_______\\/\\\\\\__/\\\\\\_\\/\\\\\\______\\//\\\\\\_______________________________/\\\\\\\\\\\\\\\\\\__      
-   _\\/\\\\\\\\\\\\\\\\\\\\\\\\\\/__\\///__\\/\\\\\\_______\\/\\\\\\__/\\\\/\\\\\\\\\\\\\\______/\\\\\\\\\\_____/\\\\\\/////\\\\\\_     
-    _\\/\\\\\\/////////_____/\\\\\\_\\/\\\\\\_______\\/\\\\\\_\\/\\\\\\/////\\\\\\___/\\\\\\///\\\\\\__\\/\\\\\\\\\\\\\\\\\\\\__    
-     _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\_______\\/\\\\\\_\\/\\\\\\___\\///___/\\\\\\__\\//\\\\\\_\\/\\\\\\//////___   
-      _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\_______/\\\\\\__\\/\\\\\\_________\\//\\\\\\__/\\\\\\__\\/\\\\\\_________  
-       _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\\\\\\\\\\\\\\\\\\\/___\\/\\\\\\__________\\///\\\\\\\\\\/___\\/\\\\\\_________ 
+__/\\\\\\\\\\\\\\\\\\\\\\\\\\__________/\\\\\\\\\\\\\\\\\\\\\\\\______________________________________________
+ _\\/\\\\\\/////////\\\\\\_______\\/\\\\\\////////\\\\\\____________________________________________
+  _\\/\\\\\\_______\\/\\\\\\__/\\\\\\_\\/\\\\\\______\\//\\\\\\_______________________________/\\\\\\\\\\\\\\\\\\__
+   _\\/\\\\\\\\\\\\\\\\\\\\\\\\\\/__\\///__\\/\\\\\\_______\\/\\\\\\__/\\\\/\\\\\\\\\\\\\\______/\\\\\\\\\\_____/\\\\\\/////\\\\\\_
+    _\\/\\\\\\/////////_____/\\\\\\_\\/\\\\\\_______\\/\\\\\\_\\/\\\\\\/////\\\\\\___/\\\\\\///\\\\\\__\\/\\\\\\\\\\\\\\\\\\\\__
+     _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\_______\\/\\\\\\_\\/\\\\\\___\\///___/\\\\\\__\\//\\\\\\_\\/\\\\\\//////___
+      _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\_______/\\\\\\__\\/\\\\\\_________\\//\\\\\\__/\\\\\\__\\/\\\\\\_________
+       _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\\\\\\\\\\\\\\\\\\\/___\\/\\\\\\__________\\///\\\\\\\\\\/___\\/\\\\\\_________
         _\\///______________\\///__\\////////////_____\\///_____________\\/////_____\\///__________
     	""")
 

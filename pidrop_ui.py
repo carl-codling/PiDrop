@@ -34,7 +34,6 @@ import dropbox
 from themes import *
 from pidrop_help import *
 
-
 class PiBoxSearchInput(urwid.Edit):
 
     def keypress(self, size, key):
@@ -69,7 +68,7 @@ class PiBoxDirInput(urwid.Edit):
                 os.mkdir(new_local_loc)
                 notify('New directory %s created at %s' % (dirname,new_dir_location), 'success')
                 keys.set_text(keys_default_text)
-                flist[new_local_loc] = dirname
+                flist[new_local_loc] = {'name':dirname}
                 save_flist_to_json(dir_path, flist)
 
             elif file_mode == 'rename':
@@ -100,7 +99,7 @@ class PiBoxDirInput(urwid.Edit):
         os.rename(new_dir_location, new_path_local)
         notify('%s > renamed to > %s' % (new_dir_location[rootlen:],new_path[rootlen:]),'success')
         keys.set_text(keys_default_text)
-        flist[new_path_local] = new_name
+        flist[new_path_local] = {'name':new_name}
         save_flist_to_json(dir_path, flist)
 
 class PiboxTreeWidget(urwid.TreeWidget):
@@ -148,7 +147,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             self.sync_status = self.get_node().get_value()['sync']
             if self.sync_status == 'sync':
-                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CF"),'sync')),urwid.Text(flist[self.full_path])])
+                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CF"),'sync')),urwid.Text(flist[self.full_path]['name'])])
             elif self.sync_status == 'unsync':
                 return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CB"),'unsync')),urwid.Text(self.name)])
             else:
@@ -272,14 +271,14 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def confirm_del_files(self):
         global file_mode
         if len(selected_files) < 1:
-            self.add_to_selected(self.full_path)
+            self.add_to_selected()
         file_mode = 'delete'
         keys.set_text('Press [ENTER] to confirm deletion of the selected files')
 
     def confirm_export_files(self):
         global file_mode
         if len(selected_files) < 1:
-            self.add_to_selected(self.full_path)
+            self.add_to_selected()
         file_mode = 'export'
         keys.set_text('Press [ENTER] to confirm copying the selected files to the export folder')
 
@@ -293,24 +292,23 @@ class PiboxTreeWidget(urwid.TreeWidget):
             notify('No files selected!', 'error')
 
     def path_details(self):
-        l = [urwid.Text('')]
+        global path_details_list
+        path_details_list = [urwid.Text('')]
         if(hasattr(self, 'sync_status')):
             if self.sync_status == 'sync':
-                l.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'sync'))
+                path_details_list.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'sync'))
             elif self.sync_status == 'unsync':
-                l.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'unsync'))
+                path_details_list.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'unsync'))
             else:
-                l.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'nosync'))
-        l.append(urwid.Text('Full path: '+self.full_path))
+                path_details_list.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'nosync'))
+        path_details_list.append(urwid.Text('Full path: '+self.full_path))
         if os.path.isfile(self.full_path):
             fsize = os.path.getsize(self.full_path)
-            l.append(urwid.Text('Size: '+readable_bytes(fsize)))
-        fdetails.original_widget = urwid.ListBox(l)
-        more_details.original_widget = urwid.ListBox([])
+            path_details_list.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        fdetails.original_widget = urwid.ListBox(path_details_list)
 
 
     def more_path_details(self):
-        l = []
         if os.path.isdir(self.full_path):
             fsize = 0
             nfiles = 0
@@ -319,13 +317,21 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            l.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+            path_details_list.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
         else:
             mod = time.ctime(os.path.getmtime(self.full_path))
+            path_details_list.append(urwid.Text('Last modified: %s' % (str(mod))))
             typ = subprocess.check_output(['file', '--mime-type', self.full_path])
-            l.append(urwid.Text('Last modified: %s' % (str(mod))))
-            l.append(urwid.Text('File type: %s' % (typ[len(self.full_path)+2:])))
-        more_details.original_widget = urwid.ListBox(l)
+            typstr = 'File type: %s' % (typ[len(self.full_path)+2:])
+            typstr = typstr.strip()
+            path_details_list.append(urwid.Text(typstr))
+            if self.full_path in flist and 'media_info' in flist[self.full_path]:
+                for k,v in  flist[self.full_path]['media_info'].items():
+                    if k == 'Duration: ':
+                        v = str(datetime.timedelta(milliseconds=int(v))).split('.')[0]
+                    path_details_list.append(urwid.Text(k+v))
+
+        fdetails.original_widget = urwid.ListBox(path_details_list)
 
 
     def move_files(self):
@@ -340,7 +346,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         for f in selected_files:
             newp = p+os.sep+f.split(os.sep)[-1]
             if f in flist:
-                newp_remote = p+os.sep+flist[f]
+                newp_remote = p+os.sep+flist[f]['name']
                 newp_remote = newp_remote[rootlen:]
             else:
                 newp_remote = newp[rootlen:]
@@ -353,7 +359,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 return None
             os.rename(f, newp)
             if f in flist:
-                flist[newp] = flist[f]
+                flist[newp] = {'name':flist[f]['name']}
                 del flist[f]
             i+=1
 
@@ -1047,11 +1053,9 @@ def construct_exporter_listbox():
 
 def construct_properties_box():
     global fdetails
-    global more_details
     global fdetails_container
     fdetails = urwid.AttrWrap(urwid.ListBox([urwid.Text('file and folder details will appear here')]),'details')
-    more_details = urwid.AttrWrap(urwid.ListBox([]),'details')
-    plists = urwid.Pile([fdetails,more_details])
+    plists = urwid.Pile([fdetails])
     fdetails_container = urwid.Frame(
         urwid.AttrWrap(urwid.Padding(plists, left=2, right=2),'details'),
         header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header')
