@@ -226,6 +226,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             keys.set_text(keys_default_text)
             file_mode = None
             build_pibox_list()
+            clear_notify(None)
         else:
             return key
 
@@ -991,7 +992,6 @@ def build_pibox_list(dir='*'):
 
     if 'search_term' in globals() and search_term != None:
         search_listbox.original_widget = get_search_listbox()
-
     fdetails.original_widget = urwid.ListBox([])
 
 def get_search_listbox():
