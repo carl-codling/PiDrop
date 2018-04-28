@@ -147,16 +147,36 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 self._w.focus_attr = 'dir focus'
 
     def load_inner_widget(self):
+        if 'shared' in self.get_node().get_value():
+            shared = urwid.AttrWrap(urwid.Text('[shared]'), 'shared')
+        else:
+            shared = urwid.Text('')
         if self.get_node().get_depth()<1:
             return urwid.Text(self.name)
         elif 'sync' in self.get_node().get_value():
             self.sync_status = self.get_node().get_value()['sync']
             if self.sync_status == 'sync':
-                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CF"),'sync')),urwid.Text(flist[self.full_path]['name'])])
+                return urwid.Columns([
+                                (2, urwid.AttrWrap(
+                                            urwid.Text(u"\u25CF"),
+                                            'sync')),
+                                (len(flist[self.full_path]['name'])+1,
+                                            urwid.Text(flist[self.full_path]['name'])),
+                                (8,shared)
+                            ])
             elif self.sync_status == 'unsync':
-                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25CB"),'unsync')),urwid.Text(self.name)])
+                return urwid.Columns([
+                                (2, urwid.AttrWrap(
+                                            urwid.Text(u"\u25CB"),'unsync')),
+                                (len(self.name)+1,urwid.Text(self.name)),
+                                (8,shared)
+                            ])
             else:
-                return urwid.Columns([(2, urwid.AttrWrap(urwid.Text(u"\u25A2"),'nosync')),urwid.Text(self.name)])
+                return urwid.Columns([
+                                (2, urwid.AttrWrap(
+                                            urwid.Text(u"\u25A2"),'nosync')),
+                                (len(self.name)+1,urwid.Text(self.name)),
+                                (8,shared)])
         else:
             return urwid.Text(self.name)
 
@@ -922,8 +942,18 @@ def format_pibox_dir(dir, path, overide_sync_check=False):
         o = {'name':k, 'path':path, 'sync':sync}
         if len(children) > 0:
             o['children']  = children
+        shared = is_shared(fpath)
+        if shared:
+            o['shared'] = shared
         out.append(o)
     return out
+
+def is_shared(path):
+    if path not in flist:
+        return False
+    elif 'shared' in flist[path]:
+        return flist[path]['shared']
+    return False
 
 def path_has_synced_parent(p):
     rlen = len(cfga['rootdir'])

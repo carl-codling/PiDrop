@@ -25,7 +25,8 @@ palettes = {
             ('button focus', 'light blue', 'white'),
             ('sync', 'dark green,bold', 'light gray'),
             ('unsync', 'dark blue', 'light gray'),
-            ('nosync', 'white', 'light gray')
+            ('nosync', 'dark gray', 'light gray'),
+            ('shared', 'white', 'dark gray')
         ],
         'dark':[
             ('body', 'light gray', 'black'),
@@ -51,7 +52,8 @@ palettes = {
             ('button focus', 'dark magenta', 'white'),
             ('sync', 'dark green,bold', 'black'),
             ('unsync', 'dark blue', 'black'),
-            ('nosync', 'dark gray', 'black')
+            ('nosync', 'dark gray', 'black'),
+            ('shared', 'white', 'dark gray')
         ],
         'system defaults':[
             ('body', 'default', 'default'),
@@ -77,6 +79,7 @@ palettes = {
             ('button focus', 'default', 'default'),
             ('sync', 'default', 'default'),
             ('unsync', 'default', 'default'),
-            ('nosync', 'default', 'default')
+            ('nosync', 'default', 'default'),
+            ('shared', 'default', 'default')
         ]
     }

@@ -501,6 +501,8 @@ def list_folder(folder):
                 flist[p]['media_info']['Dimensions: '] = str(md.dimensions.width) + 'x' + str(md.dimensions.height)
             if hasattr(md, 'location') and md.location != None:
                 flist[p]['media_info']['Location: '] = str(md.location.latitude)+', '+str(md.location.longitude)
+        if hasattr(entry, 'shared_folder_id') and entry.shared_folder_id != None:
+            flist[p]['shared'] = entry.shared_folder_id
 
     return rv
 
