@@ -88,18 +88,23 @@ class PiBoxDirInput(urwid.Edit):
         rootlen = len(cfga['rootdir'])-1
         current_name = new_dir_location.split(os.sep)[-1]
         new_path = new_dir_location[:-len(current_name)] + new_name
-        new_path_local = new_dir_location[:-len(current_name)] + new_name.lower()
         try:
-            res = dbx.files_move(
-                new_dir_location[rootlen:], new_path[rootlen:])
+            res = dbx.files_move_v2(
+                new_dir_location[rootlen:], new_path[rootlen:],
+                autorename=True)
         except dropbox.exceptions.ApiError as err:
             notify('*** API error: %s' % (str(err)), 'error')
             keys.set_text(keys_default_text)
             return None
-        os.rename(new_dir_location, new_path_local)
-        notify('%s > renamed to > %s' % (new_dir_location[rootlen:],new_path[rootlen:]),'success')
+        new_local_path = os.sep + cfga['rootdir'].strip(os.sep) + res.metadata.path_lower
+        try:
+            os.rename(new_dir_location, new_local_path)
+        except OSError as err:
+            notify(err,'error')
+            return
+        notify('%s > renamed to > %s' % (new_dir_location[rootlen:],new_local_path[rootlen:]),'success')
         keys.set_text(keys_default_text)
-        flist[new_path_local] = {'name':new_name}
+        flist[new_local_path] = {'name':res.metadata.path_display.split(os.sep)[-1]}
         save_flist_to_json(dir_path, flist)
 
 class PiboxTreeWidget(urwid.TreeWidget):
@@ -358,21 +363,22 @@ class PiboxTreeWidget(urwid.TreeWidget):
             else:
                 newp_remote = newp[rootlen:]
             try:
-                res = dbx.files_move(
+                res = dbx.files_move_v2(
                     f[rootlen:], newp_remote,
                     autorename=True)
             except dropbox.exceptions.ApiError as err:
                 notify('*** API error: %s' % (str(err)))
                 return None
-            os.rename(f, newp)
+            new_local_path = os.sep + cfga['rootdir'].strip(os.sep) + res.metadata.path_lower
+            os.rename(f, new_local_path)
             if f in flist:
-                flist[newp] = {'name':flist[f]['name']}
+                flist[new_local_path] = {'name':res.metadata.path_display.split(os.sep)[-1]}
                 del flist[f]
             i+=1
 
         save_flist_to_json(dir_path, flist)
         build_pibox_list()
-        notify('%d Selected files were moved.' % (i), 'success')
+        notify('%d Selected files/folders were moved.' % (i), 'success')
         keys.set_text(keys_default_text)
         selected_files = []
         file_mode = None
@@ -441,6 +447,9 @@ class PiboxTreeWidget(urwid.TreeWidget):
         build_pibox_list()
 
     def import_files(self):
+        """ Import files in to a folder in the main dropbox folders
+        Files added locally only, if they go to a synce folder they'll be uploaded
+        on next sync"""
         global import_files
         global file_mode
         rootlen = len(cfga['import-dir'])

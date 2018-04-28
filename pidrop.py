@@ -299,7 +299,7 @@ def syncbox(folder):
 
 
         elif isinstance(f, dropbox.files.DeletedMetadata):
-            dblog(name+': is in the delete list')
+            dblog(name+': is in the DELETE list')
             sync_deleted(listing[name])
     sync_local(folder)
 
@@ -367,16 +367,21 @@ def sync_deleted(data):
     Deleted any paths that are marked as deleted in data recieved from Dropbox
     """
     local_path = '/'.join([rootdir, data.path_lower.strip('/')])
+    dblog(local_path)
     if os.path.isdir(local_path):
         try:
             shutil.rmtree(local_path)
         except Exception as e:
             dblog('Could not remove directory: '+str(e))
+            return
+        dblog('REMOVED DIR: '+local_path)
     elif os.path.isfile(local_path):
         try:
             os.remove(local_path)
         except Exception as e:
             dblog('Could not remove file: '+str(e))
+            return
+        dblog('REMOVED FILE: '+local_path)
 
 
 
@@ -449,9 +454,17 @@ def download_file(data):
 
 def dbx_fetch_folder(folder, cursor=None):
     if cursor is not None:
-        res = dbx.files_list_folder_continue(cursor)
+        try:
+            res = dbx.files_list_folder_continue(cursor)
+        except dropbox.exceptions.ApiError as err:
+            dblog('Continuing folder listing failed for'+ folder+ '-- assumed empty:'+ str(err))
+            return {}
     else:
-        res = dbx.files_list_folder(folder, recursive=True, include_deleted=True,  include_media_info=True)
+        try:
+            res = dbx.files_list_folder(folder, recursive=True, include_deleted=True,  include_media_info=True)
+        except dropbox.exceptions.ApiError as err:
+            dblog('Folder listing failed for'+ folder+ '-- assumed empty:'+ str(err))
+            return {}
     out = res.entries
     if res.has_more:
         out.extend(dbx_fetch_folder(folder, res.cursor))
@@ -477,7 +490,7 @@ def list_folder(folder):
         path_list[folder].append(p)
         flist[p] = {'name':os.path.basename(entry.path_display)}
         if hasattr(entry, 'media_info') and entry.media_info != None:
-            dblog('################## HAS MEDIA INFO')
+            dblog('registering media info for '+entry.path_display)
             md = entry.media_info.get_metadata()
             flist[p]['media_info'] = {}
             if hasattr(md, 'time_taken') and md.time_taken != None:
