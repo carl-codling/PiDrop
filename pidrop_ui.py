@@ -28,6 +28,7 @@ import six
 import urwid
 import shutil
 import subprocess
+import re
 
 import dropbox
 
@@ -318,6 +319,15 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             file_mode = None
             notify('No files selected!', 'error')
+
+    def register_current_focus_folder(self):
+        global current_focus_folder
+        if os.path.isdir(self.full_path):
+            current_focus_folder = self.full_path
+        else:
+            current_focus_folder = self.path
+
+
 
     def path_details(self):
         global path_details_list
@@ -848,6 +858,7 @@ class PiboxWalker(urwid.TreeWalker):
         urwid.connect_signal(self, 'modified', self.walking)
     def walking(self):
         self.focus.get_widget().path_details()
+        self.focus.get_widget().register_current_focus_folder()
 
 class MainContainer(urwid.Pile):
     def keypress(self, size, key):
@@ -999,16 +1010,33 @@ def set_search(w, txt):
 
 def get_search_list():
     result = []
-    pattern = '*'+search_term.lower()+'*'
-    for root, dirs, files in os.walk(cfga['rootdir']):
-        for name in files:
-            if fnmatch.fnmatch(name.lower(), pattern):
-                result.append({'name':name,'path':root})
-        for name in dirs:
-            if fnmatch.fnmatch(name.lower(), pattern):
-                result.append({'name':name,'path':root})
 
-    return {'name':'Search Results for ['+search_term+']:', 'path':'[[SEARCH]]', 'children':result}
+    if search_current_folder:
+        f = search_current_folder
+    else:
+        f = cfga['rootdir']
+
+    if search_regex:
+        pattern = re.compile(search_term)
+        for root, dirs, files in os.walk(f):
+            for name in files:
+                if pattern.match(name):
+                    result.append({'name':name,'path':root})
+            for name in dirs:
+                if pattern.match(name):
+                    result.append({'name':name,'path':root})
+    else:
+        pattern = '*'+search_term.lower()+'*'
+
+        for root, dirs, files in os.walk(f):
+            for name in files:
+                if fnmatch.fnmatch(name.lower(), pattern):
+                    result.append({'name':name,'path':root})
+            for name in dirs:
+                if fnmatch.fnmatch(name.lower(), pattern):
+                    result.append({'name':name,'path':root})
+
+    return {'name':'Search Results for ['+search_term+'] in '+f+':', 'path':'[[SEARCH]]', 'children':result}
 
 def build_pibox_list(dir='*'):
     if dir in ['*', 'pibox']:
@@ -1041,7 +1069,7 @@ def build_search_list():
         ('pack',divider),
         urwid.Padding(urwid.AttrWrap(urwid.LineBox(urwid.Columns([search_listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
         ('pack',divider),
-        ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
+        ('pack',urwid.Padding(search_section, left=2, right=2))
     ],3)
 
 def clear_search_list(d):
@@ -1051,7 +1079,7 @@ def clear_search_list(d):
         ('pack',messages),
         urwid.Padding(listbox, left=1, right=1),
         ('pack',divider),
-        ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
+        ('pack',urwid.Padding(search_section, left=2, right=2))
     ])
 
 def get_pibox_listbox():
@@ -1159,11 +1187,26 @@ def construct_browser_right_column():
 def construct_browser_main_column():
     global listbox
     global search_box
+    global search_section
     # Main directory browser
     listbox =  urwid.AttrWrap(get_pibox_listbox(), 'body')
     # search input element
     search_box = PiBoxSearchInput('Search:')
     urwid.connect_signal(search_box, 'change', set_search)
+    search_current_checkbox = urwid.CheckBox('current folder only', on_state_change=search_current_toggle)
+    search_regex_checkbox = urwid.CheckBox('regex', on_state_change=search_regex_toggle)
+    search_section = urwid.Columns([urwid.AttrWrap(search_box, 'search_box'),(24, search_current_checkbox),(10, search_regex_checkbox) ])
+
+def search_current_toggle(w, d):
+    global search_current_folder
+    if d:
+        search_current_folder = current_focus_folder
+    else:
+        search_current_folder = False
+
+def search_regex_toggle(w, d):
+    global search_regex
+    search_regex = d
 
 def construct_browser_mainview():
     global keys
@@ -1182,7 +1225,7 @@ def construct_browser_mainview():
         ('pack',messages),
         urwid.Padding(listbox, left=1, right=1),
         ('pack',divider),
-        ('pack',urwid.Padding(urwid.AttrWrap(search_box, 'search_box'), left=2, right=2))
+        ('pack',urwid.Padding(search_section, left=2, right=2))
     ]),'body')
     cols = MainContainer([urwid.Columns([('weight', 3,main_browser), right_column])])
     mainview.original_widget = urwid.Frame(
