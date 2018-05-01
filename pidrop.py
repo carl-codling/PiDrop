@@ -605,7 +605,7 @@ def upload(path, overwrite=False):
     except OSError as err:
         dblog('*** OS error: '+ str(err))
         return None
-    flist[new_path] = fname
+    flist[new_path] = {'name':fname}
     dblog('uploaded as '+ res.name.encode('utf8'))
     return res
 
@@ -677,7 +677,7 @@ def upload_large(path, overwrite=False):
     except OSError as err:
         dblog('*** OS error: '+ str(err))
         return None
-    flist[new_path] = fname
+    flist[new_path] = {'name':fname}
 
 
 def register_bandwidth_usage(n):
