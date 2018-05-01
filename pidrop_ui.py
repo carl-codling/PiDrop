@@ -71,19 +71,28 @@ class PiBoxDirInput(urwid.Edit):
                 keys.set_text(keys_default_text)
                 flist[new_local_loc] = {'name':dirname}
                 save_flist_to_json(dir_path, flist)
+                if os.path.isdir(current_focus_browser_widget.full_path):
+                    targ = current_focus_browser_widget.get_node()
+                else:
+                    targ = current_focus_browser_widget.get_node().get_parent()
+                if 'children' in targ._value:
+                    targ._value['children'].append({'name':dirname, 'path':new_dir_location, 'sync':'sync'})
+                else:
+                    targ._value['children'] = [{'name':dirname, 'path':new_dir_location, 'sync':'sync'}]
+                targ.__init__(targ._value, targ._parent, targ._key, targ._depth)
 
             elif file_mode == 'rename':
                 self.rename_path(dirname)
 
             file_mode = None
             new_dir_location = None
-            build_pibox_list('pibox')
+            listbox_container.original_widget = listbox
 
         elif key == 'esc':
             file_mode = None
             new_dir_location = None
             keys.set_text(keys_default_text)
-            build_pibox_list('pibox')
+            listbox_container.original_widget = listbox
 
     def rename_path(self, new_name):
         rootlen = len(cfga['rootdir'])-1
@@ -105,8 +114,13 @@ class PiBoxDirInput(urwid.Edit):
             return
         notify('%s > renamed to > %s' % (new_dir_location[rootlen:],new_local_path[rootlen:]),'success')
         keys.set_text(keys_default_text)
-        flist[new_local_path] = {'name':res.metadata.path_display.split(os.sep)[-1]}
+        new_fname = res.metadata.path_display.split(os.sep)[-1]
+        flist[new_local_path] = {'name':new_fname}
         save_flist_to_json(dir_path, flist)
+        current_focus_browser_widget.get_node()._value['name'] = new_fname
+        namelen = len(new_fname)+1
+        current_focus_browser_widget.get_node()._value['path'] = new_local_path[:-namelen]
+        current_focus_browser_widget.__init__(current_focus_browser_widget.get_node())
 
 class PiboxTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
@@ -148,38 +162,47 @@ class PiboxTreeWidget(urwid.TreeWidget):
                 self._w.focus_attr = 'dir focus'
 
     def load_inner_widget(self):
+        # if we have a shared folder create a label for it
         if 'shared' in self.get_node().get_value():
             shared = urwid.AttrWrap(urwid.Text('[shared]'), 'shared')
         else:
             shared = urwid.Text('')
+        # if our path exists in flist then get the display name
+        if self.full_path in flist:
+            fname = flist[self.full_path]['name']
+        else:
+            fname = self.name
+        # if we're at the root node simply set a textual name
         if self.get_node().get_depth()<1:
-            return urwid.Text(self.name)
+            self.inner_w =  urwid.Text(self.name)
+        # otherwise try to determine sync status
         elif 'sync' in self.get_node().get_value():
             self.sync_status = self.get_node().get_value()['sync']
             if self.sync_status == 'sync':
-                return urwid.Columns([
+                self.inner_w = urwid.Columns([
                                 (2, urwid.AttrWrap(
                                             urwid.Text(u"\u25CF"),
                                             'sync')),
-                                (len(flist[self.full_path]['name'])+1,
-                                            urwid.Text(flist[self.full_path]['name'])),
+                                (len(fname)+1,
+                                            urwid.Text(fname)),
                                 (8,shared)
                             ])
             elif self.sync_status == 'unsync':
-                return urwid.Columns([
+                self.inner_w = urwid.Columns([
                                 (2, urwid.AttrWrap(
                                             urwid.Text(u"\u25CB"),'unsync')),
-                                (len(self.name)+1,urwid.Text(self.name)),
+                                (len(fname)+1,urwid.Text(fname)),
                                 (8,shared)
                             ])
             else:
-                return urwid.Columns([
+                self.inner_w = urwid.Columns([
                                 (2, urwid.AttrWrap(
                                             urwid.Text(u"\u25A2"),'nosync')),
-                                (len(self.name)+1,urwid.Text(self.name)),
+                                (len(fname)+1,urwid.Text(fname)),
                                 (8,shared)])
         else:
-            return urwid.Text(self.name)
+            self.inner_w = urwid.Text(fname)
+        return self.inner_w
 
     def selectable(self):
         return True
@@ -422,7 +445,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             return
         new_dir_location = self.full_path
         file_mode = 'rename'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('Rename %s to:\n' % (self.name)), 'search_box_active')])), 'body')
+        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiBoxDirInput('Rename %s to:\n' % (self.name))]), 'search_box_active')
         keys.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def delete_files(self):
@@ -431,19 +454,22 @@ class PiboxTreeWidget(urwid.TreeWidget):
         rootlen = len(cfga['rootdir'])
         nfiles = 0
         nfolders = 0
+        out = ''
         for f in selected_files:
             try:
                 dbx.files_delete_v2(os.sep+f[rootlen:])
             except dropbox.exceptions.ApiError as err:
-                    notify('*** API error: %s' % (str(err)) , 'error')
-                    return None
+                    out += '*** API error: %s\n' % (str(err))
+                    #return None
             if os.path.isdir(f):
                 shutil.rmtree(f)
+                out += 'dir and any contained items deleted [%s]\n' % (f)
                 nfolders +=1
             else:
                 os.remove(f)
+                out += 'file deleted [%s]\n' % (f)
                 nfiles +=1
-        notify('%d files and %d folders have been deleted.' % (nfiles,nfolders), 'success')
+        notify('%d files and %d folders have been deleted.\n------------------------\n%s' % (nfiles,nfolders,out), 'success')
         keys.set_text(keys_default_text)
         selected_files = []
         file_mode = None
@@ -452,7 +478,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
     def export_files(self):
         global selected_files
         global file_mode
-
+        loading(exporter_listbox)
         for p in selected_files:
             dest = cfga['export-dir'] + os.sep + p.split(os.sep)[-1]
             if os.path.isfile(p):
@@ -475,7 +501,8 @@ class PiboxTreeWidget(urwid.TreeWidget):
         file_mode = None
         notify('files have been exported.', 'success')
         keys.set_text(keys_default_text)
-        build_pibox_list()
+        build_pibox_list('exporter')
+        walker.reset_all_nodes_style()
 
     def import_files(self):
         """ Import files in to a folder in the main dropbox folders
@@ -489,10 +516,21 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             p = self.path
         i=0
+        #new_items = []
         for f in import_files:
-            newp = p+os.sep+f.split(os.sep)[-1]
+            newp = p+os.sep+os.path.basename(f)
             os.rename(f, newp)
+            #new_items.append({'name':os.path.basename(f), 'path':p, 'sync':'unsync'})
             i+=1
+        # if os.path.isdir(current_focus_browser_widget.full_path):
+        #     targ = current_focus_browser_widget.get_node()
+        # else:
+        #     targ = current_focus_browser_widget.get_node().get_parent()
+        # if 'children' in targ._value:
+        #     targ._value['children'] += new_items
+        # else:
+        #     targ._value['children'] = new_items
+        # targ.__init__(targ._value, targ._parent, targ._key, targ._depth)
         build_pibox_list()
         notify('%d Selected files and folders were imported.' % (i), 'success')
         keys.set_text(keys_default_text)
@@ -507,7 +545,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             new_dir_location = self.path
         file_mode = 'new_dir'
-        listbox.original_widget =  urwid.AttrWrap(urwid.ListBox(urwid.SimpleFocusListWalker([urwid.AttrWrap(PiBoxDirInput('New directory name:\n'), 'search_box_active')])), 'body')
+        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiBoxDirInput('New directory name:\n')]), 'search_box_active')
         keys.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
@@ -516,9 +554,11 @@ class ImporterTreeWidget(urwid.TreeWidget):
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
     def __init__(self, node):
+        self.name = node.get_value()['name']
+        self.path = node.get_value()['path']
+        self.full_path = self.path+os.sep+self.name
         self.__super.__init__(node)
-        path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        if os.path.isdir(path) and 'children' in self.get_node().get_value():
+        if os.path.isdir(self.full_path) and 'children' in self.get_node().get_value():
             self.update_expanded_icon()
         self._w = urwid.AttrWrap(self._w, None)
         self._w.attr = 'importer'
@@ -550,32 +590,33 @@ class ImporterTreeWidget(urwid.TreeWidget):
             return key
 
     def path_details(self):
-        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        l = []
-        l.append(urwid.Text('Full path: '+location))
-        if os.path.isfile(location):
-            fsize = os.path.getsize(location)
-            l.append(urwid.Text('Size: '+readable_bytes(fsize)))
-        fdetails.original_widget = urwid.ListBox(l)
+        global path_details_list
+        path_details_list = [urwid.Text('')]
+        path_details_list.append(urwid.Text('Full path: '+self.full_path))
+        if os.path.isfile(self.full_path):
+            fsize = os.path.getsize(self.full_path)
+            path_details_list.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        fdetails.original_widget = urwid.ListBox(path_details_list)
 
     def more_path_details(self):
-        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        l = []
-        if os.path.isdir(location):
+        if os.path.isdir(self.full_path):
             fsize = 0
             nfiles = 0
-            for (path, dirs, files) in os.walk(location):
+            for (path, dirs, files) in os.walk(self.full_path):
               for f in files:
                 nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            l.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+            path_details_list.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
         else:
-            mod = time.ctime(os.path.getmtime(location))
-            typ = subprocess.check_output(['file', '--mime-type', location])
-            l.append(urwid.Text('Last modified: %s' % (str(mod))))
-            l.append(urwid.Text('File type: %s' % (typ[len(location)+2:])))
-        more_details.original_widget = urwid.ListBox(l)
+            mod = time.ctime(os.path.getmtime(self.full_path))
+            path_details_list.append(urwid.Text('Last modified: %s' % (str(mod))))
+            typ = subprocess.check_output(['file', '--mime-type', self.full_path])
+            typstr = 'File type: %s' % (typ[len(self.full_path)+2:])
+            typstr = typstr.strip()
+            path_details_list.append(urwid.Text(typstr))
+
+        fdetails.original_widget = urwid.ListBox(path_details_list)
 
     def add_to_selected(self,p):
         global import_files;
@@ -625,9 +666,11 @@ class ExporterTreeWidget(urwid.TreeWidget):
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
     def __init__(self, node):
+        self.name = node.get_value()['name']
+        self.path = node.get_value()['path']
+        self.full_path = self.path+os.sep+self.name
         self.__super.__init__(node)
-        path = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        if os.path.isdir(path) and 'children' in self.get_node().get_value():
+        if os.path.isdir(self.full_path) and 'children' in self.get_node().get_value():
             self.update_expanded_icon()
         self._w = urwid.AttrWrap(self._w, None)
         self._w.attr = 'exporter'
@@ -653,38 +696,43 @@ class ExporterTreeWidget(urwid.TreeWidget):
             return key
 
     def path_details(self):
-        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        l = []
-        l.append(urwid.Text('Full path: '+location))
-        if os.path.isfile(location):
-            fsize = os.path.getsize(location)
-            l.append(urwid.Text('Size: '+readable_bytes(fsize)))
-        fdetails.original_widget = urwid.ListBox(l)
+        global path_details_list
+        path_details_list = [urwid.Text('')]
+        path_details_list.append(urwid.Text('Full path: '+self.full_path))
+        if os.path.isfile(self.full_path):
+            fsize = os.path.getsize(self.full_path)
+            path_details_list.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        fdetails.original_widget = urwid.ListBox(path_details_list)
 
     def more_path_details(self):
-        location = self.get_node().get_value()['path']+os.sep+self.get_node().get_value()['name']
-        l = []
-        if os.path.isdir(location):
+        if os.path.isdir(self.full_path):
             fsize = 0
             nfiles = 0
-            for (path, dirs, files) in os.walk(location):
+            for (path, dirs, files) in os.walk(self.full_path):
               for f in files:
                 nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            l.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+            path_details_list.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
         else:
-            mod = time.ctime(os.path.getmtime(location))
-            typ = subprocess.check_output(['file', '--mime-type', location])
-            l.append(urwid.Text('Last modified: %s' % (str(mod))))
-            l.append(urwid.Text('File type: %s' % (typ[len(location)+2:])))
-        more_details.original_widget = urwid.ListBox(l)
+            mod = time.ctime(os.path.getmtime(self.full_path))
+            path_details_list.append(urwid.Text('Last modified: %s' % (str(mod))))
+            typ = subprocess.check_output(['file', '--mime-type', self.full_path])
+            typstr = 'File type: %s' % (typ[len(self.full_path)+2:])
+            typstr = typstr.strip()
+            path_details_list.append(urwid.Text(typstr))
+
+        fdetails.original_widget = urwid.ListBox(path_details_list)
 
 
 class PiboxNode(urwid.TreeNode):
     """ Data storage object for leaf nodes """
     def load_widget(self):
-        return PiboxTreeWidget(self)
+        return  PiboxTreeWidget(self)
+
+    def has_children(self):
+        return False
+
 
 class ImporterNode(urwid.TreeNode):
     """ Data storage object for leaf nodes """
@@ -852,13 +900,87 @@ class ExporterParentNode(urwid.ParentNode):
 
         return childclass(childdata, parent=self, key=key, depth=childdepth)
 
-class PiboxWalker(urwid.TreeWalker):
+class DirWalker(urwid.TreeWalker):
     def __init__(self, start_from):
         self.focus = start_from
         urwid.connect_signal(self, 'modified', self.walking)
     def walking(self):
         self.focus.get_widget().path_details()
+
+class PiboxWalker(urwid.TreeWalker):
+    def __init__(self, start_from):
+        self.focus = start_from
+        urwid.connect_signal(self, 'modified', self.walking)
+    def walking(self):
+        global current_focus_browser_widget
+        global current_focus_path
+        current_focus_browser_widget = self.focus.get_widget()
+        current_focus_path = self.focus.get_value()['path']+os.sep+self.focus.get_value()['name']
+        self.focus.get_widget().path_details()
         self.focus.get_widget().register_current_focus_folder()
+    def reset_all_nodes_style(self):
+        nodes = self.__iter__()
+        for p in nodes:
+            p.get_widget().set_style()
+
+    def reset_focus(self):
+        nodes = self.__iter__()
+        if 'current_focus_path' not in globals():
+            return
+        for p in nodes:
+            if p.get_value()['path']+os.sep+p.get_value()['name'] == current_focus_path:
+                self.set_focus(p)
+                return
+        # if we can't find the specific node we try the parent
+        nodes = self.__iter__()
+        for p in nodes:
+            if p.get_value()['path']+os.sep+p.get_value()['name'] == os.path.abspath(os.path.join(current_focus_path, os.pardir)):
+                self.set_focus(p)
+                return
+
+    # def del_selected(self):
+    #     nodes = self.__iter__()
+    #     to_del = []
+    #     for node in nodes:
+    #         w = node.get_widget()
+    #         if hasattr(w, 'full_path') and w.full_path in selected_files:
+    #             to_del.append(node)
+    #     for n in to_del:
+    #         p = n.get_parent()
+    #         sibling_data = p._value['children']
+    #         sibling_data[:] = [d for d in sibling_data if d.get('path')+os.sep+d.get('name') != n.get_widget().full_path]
+    #         p._value['children'] = sibling_data
+    #         # p._child_keys = None
+    #         # p._children = {}
+    #         p.__init__(p._value, p._parent, p._key, p._depth)
+
+    def __iter__(self):
+        """
+        Return an iterator over the positions in this ListBox.
+        If self._body does not implement positions() then iterate
+        from the focus widget down to the bottom, then from above
+        the focus up to the top.  This is the best we can do with
+        a minimal list walker implementation.
+        """
+        positions_fn = getattr(self, 'positions', None)
+        if positions_fn:
+            for pos in positions_fn():
+                yield pos
+            return
+
+        focus_widget, focus_pos = self.get_focus()
+        if focus_widget is None:
+            return
+        pos = focus_pos
+        while True:
+            yield pos
+            w, pos = self.get_next(pos)
+            if not w: break
+        pos = focus_pos
+        while True:
+            w, pos = self.get_prev(pos)
+            if not w: break
+            yield pos
 
 class MainContainer(urwid.Pile):
     def keypress(self, size, key):
@@ -905,6 +1027,36 @@ def unhandled_input(k):
     # update display of focus directory
     if k in ('q','Q'):
         raise urwid.ExitMainLoop()
+
+def get_dir(rootdir):
+    """
+    Creates a nested dictionary that represents the folder structure of a dir
+    """
+    load_synced_file_list()
+    dir = {}
+    rootdir = rootdir.rstrip(os.sep)
+    start = rootdir.rfind(os.sep) + 1
+    for path, dirs, files in os.walk(rootdir):
+        folders = path[start:].split(os.sep)
+        subdir = dict.fromkeys(files)
+        parent = reduce(dict.get, folders[:-1], dir)
+        parent[folders[-1]] = subdir
+    return format_dir(dir, rootdir[:-len(rootdir)+start-1])
+
+def format_dir(dir, path, overide_sync_check=False):
+    out=[]
+    rpath = ''
+    for k,v in dir.items():
+        osc = overide_sync_check
+        fpath = path+os.sep+k
+        children = []
+        if(v):
+            children=format_dir(v,fpath,osc)
+        o = {'name':k, 'path':path}
+        if len(children) > 0:
+            o['children']  = children
+        out.append(o)
+    return out
 
 def get_pibox_dir(rootdir):
     """
@@ -1040,12 +1192,16 @@ def get_search_list():
 
 def build_pibox_list(dir='*'):
     if dir in ['*', 'pibox']:
+        loading(listbox)
         listbox.original_widget = get_pibox_listbox()
+        walker.reset_focus()
 
     if dir in ['*', 'importer']:
+        loading(importer_listbox)
         importer_listbox.original_widget = get_importer_listbox()
 
     if dir in ['*', 'exporter']:
+        loading(exporter_listbox)
         exporter_listbox.original_widget = get_exporter_listbox()
 
     if 'search_term' in globals() and search_term != None:
@@ -1083,6 +1239,7 @@ def clear_search_list(d):
     ])
 
 def get_pibox_listbox():
+    global walker
     data = get_pibox_dir(cfga['rootdir'])[0]
     topnode = PiboxParentNode(data)
     walker = PiboxWalker(topnode)
@@ -1090,14 +1247,14 @@ def get_pibox_listbox():
     return  urwid.TreeListBox(walker)
 
 def get_importer_listbox():
-    data = get_pibox_dir(cfga['import-dir'])[0]
+    data = get_dir(cfga['import-dir'])[0]
     topnode = ImporterParentNode(data)
-    return  urwid.AttrWrap(urwid.TreeListBox(PiboxWalker(topnode)), 'importer')
+    return  urwid.AttrWrap(urwid.TreeListBox(DirWalker(topnode)), 'importer')
 
 def get_exporter_listbox():
-    data = get_pibox_dir(cfga['export-dir'])[0]
+    data = get_dir(cfga['export-dir'])[0]
     topnode = ExporterParentNode(data)
-    return  urwid.AttrWrap(urwid.TreeListBox(PiboxWalker(topnode)), 'exporter')
+    return  urwid.AttrWrap(urwid.TreeListBox(DirWalker(topnode)), 'exporter')
 
 def more_details(w):
     listbox.original_widget.body.focus.get_widget().more_path_details()
@@ -1213,6 +1370,7 @@ def construct_browser_mainview():
     global mainview
     global main_browser
     global messages
+    global listbox_container
     # notifications bar
     keys = urwid.AttrWrap(urwid.Text(keys_default_text), 'footer')
     footer = urwid.Pile([divider,keys,divider])
@@ -1221,9 +1379,11 @@ def construct_browser_mainview():
 
     messages = urwid.AttrWrap(urwid.Text(''), 'body')
 
+    listbox_container = urwid.AttrWrap(urwid.Frame(listbox), 'body')
+
     main_browser = urwid.AttrWrap(urwid.Pile([
         ('pack',messages),
-        urwid.Padding(listbox, left=1, right=1),
+        urwid.Padding(listbox_container, left=1, right=1),
         ('pack',divider),
         ('pack',urwid.Padding(search_section, left=2, right=2))
     ]),'body')
@@ -1264,9 +1424,17 @@ def do_filebrowser(w):
     file_mode = None
     collapse_cache = {}
     dbx = connect_dbx()
+    loading(mainview)
     construct_browser_right_column()
     construct_browser_main_column()
     construct_browser_mainview()
+
+def loading(target):
+    pile = urwid.Filler(MainContainer([('pack',divider),('pack',urwid.AttrWrap(urwid.Text('Loading...'),'loading')),('pack',divider)]), height=10)
+    target.original_widget = urwid.AttrWrap(urwid.Frame(
+        urwid.Padding(pile, left=5, right=5, width=10, align='center')
+    ),'body')
+    loop.draw_screen()
 
 def do_config_menu(w):
     global config_list
