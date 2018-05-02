@@ -55,7 +55,7 @@ def main():
     args = parser.parse_args()
 
     if not os.path.isfile(dir_path+'/cfg.json'):
-        piboxd()
+        PiDropd()
         cfga = {'folders':[]}
         format_outp('[ CONFIG FILE NOT FOUND ] Please use these commands to create one', 'fail')
         return setup()
@@ -75,14 +75,14 @@ def main():
     connect_dropbox()
 
     if args.funct == 'cfg':
-        piboxd()
+        PiDropd()
         format_outp('Type "help" for a list of commands', 'blue')
         return cfg(dbx, cfga)
 
     # we store a list of files that are synced, along with display paths
     flist = {}
 
-    open(dir_path+"/pibox.log", 'w').close()
+    open(dir_path+"/pidrop.log", 'w').close()
     dblog('program started in '+dir_path)
 
     for folder in cfga['folders']:
@@ -272,7 +272,7 @@ def format_outp(msg, case='hl'):
 
 
 def dblog(msg):
-    f= open(dir_path+"/pibox.log","a")
+    f= open(dir_path+"/pidrop.log","a")
     pmsg = '[ %s ] : %s \r\n' % (str(datetime.datetime.now()), msg.encode('utf-8'))
     f.write(pmsg)
     f.close()
@@ -734,7 +734,7 @@ def connect_dropbox():
         sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
     return dbx
 
-def piboxd():
+def PiDropd():
     print("""
 __/\\\\\\\\\\\\\\\\\\\\\\\\\\__________/\\\\\\\\\\\\\\\\\\\\\\\\______________________________________________
  _\\/\\\\\\/////////\\\\\\_______\\/\\\\\\////////\\\\\\____________________________________________

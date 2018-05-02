@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-Text based UI for pibox dropbox cl tools
+Text based UI for pidrop dropbox cl tools
 
 ---------------------------------------------------------------------------
 __/\\\\\\\\\\\\\__________/\\\\\\\\\\\\______________________________________________
@@ -35,7 +35,7 @@ import dropbox
 from themes import *
 from pidrop_help import *
 
-class PiBoxSearchInput(urwid.Edit):
+class PiDropSearchInput(urwid.Edit):
 
     def keypress(self, size, key):
         key = self.__super.keypress(size, key)
@@ -44,9 +44,9 @@ class PiBoxSearchInput(urwid.Edit):
             #self.set_edit_text('')
         elif key == 'esc':
             keys.set_text(keys_default_text)
-            build_pibox_list()
+            build_pidrop_list()
 
-class PiBoxDirInput(urwid.Edit):
+class PiDropDirInput(urwid.Edit):
 
     def keypress(self, size, key):
         global new_dir_location
@@ -122,7 +122,7 @@ class PiBoxDirInput(urwid.Edit):
         current_focus_browser_widget.get_node()._value['path'] = new_local_path[:-namelen]
         current_focus_browser_widget.__init__(current_focus_browser_widget.get_node())
 
-class PiboxTreeWidget(urwid.TreeWidget):
+class PiDropTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
@@ -269,7 +269,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             selected_files = []
             keys.set_text(keys_default_text)
             file_mode = None
-            build_pibox_list()
+            build_pidrop_list()
             clear_notify(None)
         else:
             return key
@@ -431,7 +431,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             i+=1
 
         save_flist_to_json(dir_path, flist)
-        build_pibox_list()
+        build_pidrop_list()
         notify('%d Selected files/folders were moved.' % (i), 'success')
         keys.set_text(keys_default_text)
         selected_files = []
@@ -445,7 +445,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
             return
         new_dir_location = self.full_path
         file_mode = 'rename'
-        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiBoxDirInput('Rename %s to:\n' % (self.name))]), 'search_box_active')
+        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiDropDirInput('Rename %s to:\n' % (self.name))]), 'search_box_active')
         keys.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def delete_files(self):
@@ -473,7 +473,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         keys.set_text(keys_default_text)
         selected_files = []
         file_mode = None
-        build_pibox_list('pibox')
+        build_pidrop_list('pidrop')
 
     def export_files(self):
         global selected_files
@@ -501,7 +501,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         file_mode = None
         notify('files have been exported.', 'success')
         keys.set_text(keys_default_text)
-        build_pibox_list('exporter')
+        build_pidrop_list('exporter')
         walker.reset_all_nodes_style()
 
     def import_files(self):
@@ -531,7 +531,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         # else:
         #     targ._value['children'] = new_items
         # targ.__init__(targ._value, targ._parent, targ._key, targ._depth)
-        build_pibox_list()
+        build_pidrop_list()
         notify('%d Selected files and folders were imported.' % (i), 'success')
         keys.set_text(keys_default_text)
         import_files = []
@@ -545,7 +545,7 @@ class PiboxTreeWidget(urwid.TreeWidget):
         else:
             new_dir_location = self.path
         file_mode = 'new_dir'
-        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiBoxDirInput('New directory name:\n')]), 'search_box_active')
+        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiDropDirInput('New directory name:\n')]), 'search_box_active')
         keys.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
@@ -725,10 +725,10 @@ class ExporterTreeWidget(urwid.TreeWidget):
         fdetails.original_widget = urwid.ListBox(path_details_list)
 
 
-class PiboxNode(urwid.TreeNode):
+class PiDropNode(urwid.TreeNode):
     """ Data storage object for leaf nodes """
     def load_widget(self):
-        return  PiboxTreeWidget(self)
+        return  PiDropTreeWidget(self)
 
     def has_children(self):
         return False
@@ -745,11 +745,11 @@ class ExporterNode(urwid.TreeNode):
         return ExporterTreeWidget(self)
 
 
-class PiboxParentNode(urwid.ParentNode):
+class PiDropParentNode(urwid.ParentNode):
     """ Data storage object for interior/parent nodes """
 
     def load_widget(self):
-        return PiboxTreeWidget(self)
+        return PiDropTreeWidget(self)
 
     def load_child_keys(self):
         data = self.get_value()
@@ -776,13 +776,13 @@ class PiboxParentNode(urwid.ParentNode):
         else: return []
 
     def load_child_node(self, key):
-        """Return either an PiboxNode or PiboxParentNode"""
+        """Return either an PiDropNode or PiDropParentNode"""
         childdata = self.get_value()['children'][key]
         childdepth = self.get_depth() + 1
         if 'children' in childdata:
-            childclass = PiboxParentNode
+            childclass = PiDropParentNode
         else:
-            childclass = PiboxNode
+            childclass = PiDropNode
 
         return childclass(childdata, parent=self, key=key, depth=childdepth)
 
@@ -798,7 +798,7 @@ class HelpParentNode(urwid.ParentNode):
         else: return []
 
     def load_child_node(self, key):
-        """Return either an PiboxNode or PiboxParentNode"""
+        """Return either an PiDropNode or PiDropParentNode"""
         childdata = self.get_value()['children'][key]
         childdepth = self.get_depth() + 1
         if 'children' in childdata:
@@ -868,7 +868,7 @@ class ImporterParentNode(urwid.ParentNode):
         else: return []
 
     def load_child_node(self, key):
-        """Return either an PiboxNode or PiboxParentNode"""
+        """Return either an PiDropNode or PiDropParentNode"""
         childdata = self.get_value()['children'][key]
         childdepth = self.get_depth() + 1
         if 'children' in childdata:
@@ -890,7 +890,7 @@ class ExporterParentNode(urwid.ParentNode):
         else: return []
 
     def load_child_node(self, key):
-        """Return either an PiboxNode or PiboxParentNode"""
+        """Return either an PiDropNode or PiDropParentNode"""
         childdata = self.get_value()['children'][key]
         childdepth = self.get_depth() + 1
         if 'children' in childdata:
@@ -907,7 +907,7 @@ class DirWalker(urwid.TreeWalker):
     def walking(self):
         self.focus.get_widget().path_details()
 
-class PiboxWalker(urwid.TreeWalker):
+class PiDropWalker(urwid.TreeWalker):
     def __init__(self, start_from):
         self.focus = start_from
         urwid.connect_signal(self, 'modified', self.walking)
@@ -1010,7 +1010,7 @@ def empty_importer(i):
             elif os.path.isdir(file_path): shutil.rmtree(file_path)
         except Exception as e:
             notify(str(e), 'error')
-    build_pibox_list('importer')
+    build_pidrop_list('importer')
 
 def empty_exporter(i):
     for the_file in os.listdir(cfga['export-dir']):
@@ -1021,7 +1021,7 @@ def empty_exporter(i):
             elif os.path.isdir(file_path): shutil.rmtree(file_path)
         except Exception as e:
             notify(str(e), 'error')
-    build_pibox_list('exporter')
+    build_pidrop_list('exporter')
 
 def unhandled_input(k):
     # update display of focus directory
@@ -1058,7 +1058,7 @@ def format_dir(dir, path, overide_sync_check=False):
         out.append(o)
     return out
 
-def get_pibox_dir(rootdir):
+def get_pidrop_dir(rootdir):
     """
     Creates a nested dictionary that represents the folder structure of rootdir
     """
@@ -1071,9 +1071,9 @@ def get_pibox_dir(rootdir):
         subdir = dict.fromkeys(files)
         parent = reduce(dict.get, folders[:-1], dir)
         parent[folders[-1]] = subdir
-    return format_pibox_dir(dir, rootdir[:-len(rootdir)+start-1])
+    return format_pidrop_dir(dir, rootdir[:-len(rootdir)+start-1])
 
-def format_pibox_dir(dir, path, overide_sync_check=False):
+def format_pidrop_dir(dir, path, overide_sync_check=False):
     out=[]
     rpath = ''
     for k,v in dir.items():
@@ -1101,7 +1101,7 @@ def format_pibox_dir(dir, path, overide_sync_check=False):
 
         children = []
         if(v):
-            children=format_pibox_dir(v,fpath,osc)
+            children=format_pidrop_dir(v,fpath,osc)
         o = {'name':k, 'path':path, 'sync':sync}
         if len(children) > 0:
             o['children']  = children
@@ -1190,10 +1190,10 @@ def get_search_list():
 
     return {'name':'Search Results for ['+search_term+'] in '+f+':', 'path':'[[SEARCH]]', 'children':result}
 
-def build_pibox_list(dir='*'):
-    if dir in ['*', 'pibox']:
+def build_pidrop_list(dir='*'):
+    if dir in ['*', 'pidrop']:
         loading(listbox)
-        listbox.original_widget = get_pibox_listbox()
+        listbox.original_widget = get_pidrop_listbox()
         walker.reset_focus()
 
     if dir in ['*', 'importer']:
@@ -1210,8 +1210,8 @@ def build_pibox_list(dir='*'):
 
 def get_search_listbox():
     data = get_search_list()
-    topnode = PiboxParentNode(data)
-    walker = PiboxWalker(topnode)
+    topnode = PiDropParentNode(data)
+    walker = PiDropWalker(topnode)
     return urwid.AttrWrap(urwid.TreeListBox(walker),'body')
 
 def build_search_list():
@@ -1238,11 +1238,11 @@ def clear_search_list(d):
         ('pack',urwid.Padding(search_section, left=2, right=2))
     ])
 
-def get_pibox_listbox():
+def get_pidrop_listbox():
     global walker
-    data = get_pibox_dir(cfga['rootdir'])[0]
-    topnode = PiboxParentNode(data)
-    walker = PiboxWalker(topnode)
+    data = get_pidrop_dir(cfga['rootdir'])[0]
+    topnode = PiDropParentNode(data)
+    walker = PiDropWalker(topnode)
     #urwid.connect_signal(walker, 'modified', walking)
     return  urwid.TreeListBox(walker)
 
@@ -1327,7 +1327,7 @@ def construct_browser_right_column():
     construct_importer_listbox()
     construct_exporter_listbox()
     construct_properties_box()
-    #c = urwid.Terminal(['sudo', 'tail', '-f', '/home/pi/PiDrop/pibox.log'])
+    #c = urwid.Terminal(['sudo', 'tail', '-f', '/home/pi/PiDrop/pidrop.log'])
     right_column = urwid.AttrWrap(
         urwid.Padding(
             urwid.Pile([
@@ -1346,9 +1346,9 @@ def construct_browser_main_column():
     global search_box
     global search_section
     # Main directory browser
-    listbox =  urwid.AttrWrap(get_pibox_listbox(), 'body')
+    listbox =  urwid.AttrWrap(get_pidrop_listbox(), 'body')
     # search input element
-    search_box = PiBoxSearchInput('Search:')
+    search_box = PiDropSearchInput('Search:')
     urwid.connect_signal(search_box, 'change', set_search)
     search_current_checkbox = urwid.CheckBox('current folder only', on_state_change=search_current_toggle)
     search_regex_checkbox = urwid.CheckBox('regex', on_state_change=search_regex_toggle)
@@ -1375,7 +1375,7 @@ def construct_browser_mainview():
     keys = urwid.AttrWrap(urwid.Text(keys_default_text), 'footer')
     footer = urwid.Pile([divider,keys,divider])
     # primary elements
-    header = urwid.AttrWrap(urwid.Text('PIBOX - manage your dropbox'), 'header')
+    header = urwid.AttrWrap(urwid.Text('PiDrop - manage your dropbox'), 'header')
 
     messages = urwid.AttrWrap(urwid.Text(''), 'body')
 
