@@ -33,6 +33,7 @@ import re
 import dropbox
 
 from themes import *
+from helpers import *
 from pidrop_help import *
 
 class PiDropSearchInput(urwid.Edit):
@@ -40,35 +41,38 @@ class PiDropSearchInput(urwid.Edit):
     def keypress(self, size, key):
         key = self.__super.keypress(size, key)
         if key == 'enter':
-            build_search_list()
+            SEARCHBAR.build_search_list()
             #self.set_edit_text('')
         elif key == 'esc':
-            keys.set_text(keys_default_text)
-            build_pidrop_list()
+            KEYPROMPT.set()
+            SEARCHLIST.clear_search_list()
 
 class PiDropDirInput(urwid.Edit):
 
+    def __init__(self, caption, fmode, target_dir):
+        self.__super.__init__(caption)
+        self.fmode = fmode
+        self.target_dir = target_dir
+
     def keypress(self, size, key):
-        global new_dir_location
-        global file_mode
         key = self.__super.keypress(size, key)
         if key == 'enter':
             dirname = self.get_edit_text()
 
-            if file_mode == 'new_dir' and len(dirname) > 0:
-                remote_path = new_dir_location[len(cfga['rootdir'])-1:]+os.sep+dirname
-                notify(remote_path, 'success')
+            if self.fmode == 'new_dir' and len(dirname) > 0:
+                remote_path = self.target_dir[len(CONFIG.get('rootdir'))-1:]+os.sep+dirname
+                NOTIFIER.set(remote_path, 'success')
                 try:
                     res = dbx.files_create_folder_v2(
                         remote_path,
                         autorename=True)
                 except dropbox.exceptions.ApiError as err:
-                    notify('*** API error: '+ str(err))
+                    NOTIFIER.set('*** API error: '+ str(err))
                     return None
-                new_local_loc = new_dir_location+os.sep+os.path.basename(res.metadata.path_lower)
+                new_local_loc = self.target_dir+os.sep+os.path.basename(res.metadata.path_lower)
                 os.mkdir(new_local_loc)
-                notify('New directory %s created at %s' % (dirname,new_dir_location), 'success')
-                keys.set_text(keys_default_text)
+                NOTIFIER.set('New directory %s created at %s' % (dirname,self.target_dir), 'success')
+                KEYPROMPT.set()
                 flist[new_local_loc] = {'name':dirname}
                 save_flist_to_json(dir_path, flist)
                 if os.path.isdir(current_focus_browser_widget.full_path):
@@ -76,44 +80,40 @@ class PiDropDirInput(urwid.Edit):
                 else:
                     targ = current_focus_browser_widget.get_node().get_parent()
                 if 'children' in targ._value:
-                    targ._value['children'].append({'name':dirname, 'path':new_dir_location, 'sync':'sync'})
+                    targ._value['children'].append({'name':dirname, 'path':self.target_dir, 'sync':'sync'})
                 else:
-                    targ._value['children'] = [{'name':dirname, 'path':new_dir_location, 'sync':'sync'}]
+                    targ._value['children'] = [{'name':dirname, 'path':self.target_dir, 'sync':'sync'}]
                 targ.__init__(targ._value, targ._parent, targ._key, targ._depth)
 
-            elif file_mode == 'rename':
+            elif self.fmode == 'rename':
                 self.rename_path(dirname)
 
-            file_mode = None
-            new_dir_location = None
-            listbox_container.original_widget = listbox
+            BROWSER.listbox_container.original_widget = BROWSER.listbox
 
         elif key == 'esc':
-            file_mode = None
-            new_dir_location = None
-            keys.set_text(keys_default_text)
-            listbox_container.original_widget = listbox
+            KEYPROMPT.set()
+            BROWSER.listbox_container.original_widget = BROWSER.listbox
 
     def rename_path(self, new_name):
-        rootlen = len(cfga['rootdir'])-1
-        current_name = new_dir_location.split(os.sep)[-1]
-        new_path = new_dir_location[:-len(current_name)] + new_name
+        rootlen = len(CONFIG.get('rootdir'))-1
+        current_name = self.target_dir.split(os.sep)[-1]
+        new_path = self.target_dir[:-len(current_name)] + new_name
         try:
             res = dbx.files_move_v2(
-                new_dir_location[rootlen:], new_path[rootlen:],
+                self.target_dir[rootlen:], new_path[rootlen:],
                 autorename=True)
         except dropbox.exceptions.ApiError as err:
-            notify('*** API error: %s' % (str(err)), 'error')
-            keys.set_text(keys_default_text)
+            NOTIFIER.set('*** API error: %s' % (str(err)), 'error')
+            KEYPROMPT.set()
             return None
-        new_local_path = os.sep + cfga['rootdir'].strip(os.sep) + res.metadata.path_lower
+        new_local_path = os.sep + CONFIG.get('rootdir').strip(os.sep) + res.metadata.path_lower
         try:
-            os.rename(new_dir_location, new_local_path)
+            os.rename(self.target_dir, new_local_path)
         except OSError as err:
-            notify(err,'error')
+            NOTIFIER.set(err,'error')
             return
-        notify('%s > renamed to > %s' % (new_dir_location[rootlen:],new_local_path[rootlen:]),'success')
-        keys.set_text(keys_default_text)
+        NOTIFIER.set('%s > renamed to > %s' % (self.target_dir[rootlen:],new_local_path[rootlen:]),'success')
+        KEYPROMPT.set()
         new_fname = res.metadata.path_display.split(os.sep)[-1]
         flist[new_local_path] = {'name':new_fname}
         save_flist_to_json(dir_path, flist)
@@ -128,6 +128,7 @@ class PiDropTreeWidget(urwid.TreeWidget):
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
 
     indent_cols =5
+    path_properties_data = []
 
     def __init__(self, node):
         self.name = node.get_value()['name']
@@ -145,8 +146,8 @@ class PiDropTreeWidget(urwid.TreeWidget):
                 self.expanded = False
             self.update_expanded_icon()
 
-    def set_style(self):
-        if self.full_path in selected_files:
+    def set_style(self, selected=[]):
+        if self.full_path in selected:
             if  os.path.isfile(self.full_path):
                 self._w.attr = 'file select'
                 self._w.focus_attr = 'file select focus'
@@ -211,138 +212,6 @@ class PiDropTreeWidget(urwid.TreeWidget):
         self.__super.update_expanded_icon()
         collapse_cache[self.full_path] = self.expanded
 
-    def keypress(self, size, key):
-        """allow subclasses to intercept keystrokes"""
-        key = self.__super.keypress(size, key)
-        if key:
-            key = self.unhandled_keys(size, key)
-        return key
-
-    def unhandled_keys(self, size, key):
-        """
-        Override this method to intercept keystrokes in subclasses.
-        Default behavior: Toggle flagged on space, ignore other keys.
-        """
-        global selected_files;
-        global file_mode;
-
-        if key in ["s", "S"]:
-            self.add_to_selected()
-
-        elif key in ['m','M']:
-            self.confirm_move_files()
-
-        elif key in ['d','D']:
-            self.confirm_del_files()
-
-        elif key in ['e','E']:
-            self.confirm_export_files()
-
-        elif key in ["i", "I"]:
-            self.confirm_import_files()
-
-        elif key in ["n", "N"]:
-            self.new_dir()
-
-        elif key in ["r", "R"]:
-            self.init_rename_path()
-
-        elif key in ["p", "P"]:
-            self.more_path_details()
-
-        elif key == 'enter':
-            rootlen = len(cfga['rootdir'])
-
-            if file_mode == 'move':
-                self.move_files()
-
-            elif file_mode == 'delete':
-                self.delete_files()
-
-            elif file_mode == 'export':
-                self.export_files()
-
-            elif file_mode == 'import':
-                self.import_files()
-
-        elif key == 'esc':
-            selected_files = []
-            keys.set_text(keys_default_text)
-            file_mode = None
-            build_pidrop_list()
-            clear_notify(None)
-        else:
-            return key
-
-    def add_to_selected(self):
-        global selected_files;
-
-        # Check that we're not adding a file that exists in already added dir
-        parts = self.full_path[1:].split(os.sep)
-        jparts = ''
-        for part in parts:
-            jparts += os.sep+part
-            if jparts in selected_files and jparts != self.full_path:
-                notify('A higher level parent directory is already in the list', 'error')
-                return
-
-        # Check that we're not adding a folder that already has child nodes in the list
-        if os.path.isdir(self.full_path):
-            for s in filter (lambda x: self.full_path in x, selected_files):
-                if s != self.full_path:
-                    notify('To add this whole directory you first need to deselect any child nodes', 'error')
-                    return
-
-
-        if self.full_path == cfga['rootdir']:
-            notify('Cannot add the root directory to the selected list!', 'error')
-        else:
-            if self.full_path in selected_files:
-                selected_files.remove(self.full_path)
-            else:
-                selected_files.append(self.full_path)
-                if os.path.isdir(self.full_path) and 'children' in self.get_node().get_value():
-                    self.expanded = False
-                    self.update_expanded_icon()
-            if len(selected_files) > 0:
-                keys.set_text('[M]ove selected files | [D]elete selected files | [E]xport selected files | [esc] Cancel')
-            else:
-                keys.set_text(keys_default_text)
-        self.set_style()
-
-    def confirm_move_files(self):
-        global file_mode
-
-        if len(selected_files) > 0:
-            file_mode = 'move'
-            keys.set_text('Select (focus) the destination and hit [ENTER] to confirm moving the selected files')
-        else:
-            file_mode = None
-            notify('No files selected!', 'error')
-
-    def confirm_del_files(self):
-        global file_mode
-        if len(selected_files) < 1:
-            self.add_to_selected()
-        file_mode = 'delete'
-        keys.set_text('Press [ENTER] to confirm deletion of the selected files')
-
-    def confirm_export_files(self):
-        global file_mode
-        if len(selected_files) < 1:
-            self.add_to_selected()
-        file_mode = 'export'
-        keys.set_text('Press [ENTER] to confirm copying the selected files to the export folder')
-
-    def confirm_import_files(self):
-        global file_mode
-        if len(import_files) > 0:
-            file_mode = 'import'
-            keys.set_text('Press [ENTER] to confirm copying the selected files from the imports folder to here.')
-        else:
-            file_mode = None
-            notify('No files selected!', 'error')
-
     def register_current_focus_folder(self):
         global current_focus_folder
         if os.path.isdir(self.full_path):
@@ -350,27 +219,23 @@ class PiDropTreeWidget(urwid.TreeWidget):
         else:
             current_focus_folder = self.path
 
-
-
     def path_details(self):
-        global path_details_list
         if self.path == '[[SEARCH]]':
-            fdetails.original_widget = urwid.ListBox([])
+            PROPSBOX.content.original_widget = urwid.ListBox([])
             return
-        path_details_list = [urwid.Text('')]
+        self.path_properties_data = [urwid.Text('')]
         if(hasattr(self, 'sync_status')):
             if self.sync_status == 'sync':
-                path_details_list.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'sync'))
+                self.path_properties_data.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'sync'))
             elif self.sync_status == 'unsync':
-                path_details_list.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'unsync'))
+                self.path_properties_data.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'unsync'))
             else:
-                path_details_list.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'nosync'))
-        path_details_list.append(urwid.Text('Full path: '+self.full_path))
+                self.path_properties_data.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'nosync'))
+        self.path_properties_data.append(urwid.Text('Full path: '+self.full_path))
         if os.path.isfile(self.full_path):
             fsize = os.path.getsize(self.full_path)
-            path_details_list.append(urwid.Text('Size: '+readable_bytes(fsize)))
-        fdetails.original_widget = urwid.ListBox(path_details_list)
-
+            self.path_properties_data.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
     def more_path_details(self):
         if self.path == '[[SEARCH]]':
@@ -383,176 +248,49 @@ class PiDropTreeWidget(urwid.TreeWidget):
                 nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            path_details_list.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+            self.path_properties_data.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
         else:
             mod = time.ctime(os.path.getmtime(self.full_path))
-            path_details_list.append(urwid.Text('Last modified: %s' % (str(mod))))
+            self.path_properties_data.append(urwid.Text('Last modified: %s' % (str(mod))))
             typ = subprocess.check_output(['file', '--mime-type', self.full_path])
             typstr = 'File type: %s' % (typ[len(self.full_path)+2:])
             typstr = typstr.strip()
-            path_details_list.append(urwid.Text(typstr))
+            self.path_properties_data.append(urwid.Text(typstr))
             if self.full_path in flist and 'media_info' in flist[self.full_path]:
                 for k,v in  flist[self.full_path]['media_info'].items():
                     if k == 'Duration: ':
                         v = str(datetime.timedelta(milliseconds=int(v))).split('.')[0]
-                    path_details_list.append(urwid.Text(k+v))
+                    self.path_properties_data.append(urwid.Text(k+v))
 
-        fdetails.original_widget = urwid.ListBox(path_details_list)
-
-
-    def move_files(self):
-        global selected_files
-        global file_mode
-        rootlen = len(cfga['rootdir'])-1
-        if os.path.isdir(self.full_path):
-            p = self.full_path
-        else:
-            p = self.path
-        i=0
-        for f in selected_files:
-            newp = p+os.sep+f.split(os.sep)[-1]
-            if f in flist:
-                newp_remote = p+os.sep+flist[f]['name']
-                newp_remote = newp_remote[rootlen:]
-            else:
-                newp_remote = newp[rootlen:]
-            try:
-                res = dbx.files_move_v2(
-                    f[rootlen:], newp_remote,
-                    autorename=True)
-            except dropbox.exceptions.ApiError as err:
-                notify('*** API error: %s' % (str(err)))
-                return None
-            new_local_path = os.sep + cfga['rootdir'].strip(os.sep) + res.metadata.path_lower
-            os.rename(f, new_local_path)
-            if f in flist:
-                flist[new_local_path] = {'name':res.metadata.path_display.split(os.sep)[-1]}
-                del flist[f]
-            i+=1
-
-        save_flist_to_json(dir_path, flist)
-        build_pidrop_list()
-        notify('%d Selected files/folders were moved.' % (i), 'success')
-        keys.set_text(keys_default_text)
-        selected_files = []
-        file_mode = None
+        PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
     def init_rename_path(self):
-        global new_dir_location
-        global file_mode
         if self.get_node().get_depth() < 1:
-            notify('Cannot rename the root folder from here','error')
+            NOTIFIER.set('Cannot rename the root folder from here','error')
             return
-        new_dir_location = self.full_path
-        file_mode = 'rename'
-        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiDropDirInput('Rename %s to:\n' % (self.name))]), 'search_box_active')
-        keys.set_text('[enter] to confirm | [esc] to cancel and go back to previous screen')
-
-    def delete_files(self):
-        global selected_files
-        global file_mode
-        rootlen = len(cfga['rootdir'])
-        nfiles = 0
-        nfolders = 0
-        out = ''
-        for f in selected_files:
-            try:
-                dbx.files_delete_v2(os.sep+f[rootlen:])
-            except dropbox.exceptions.ApiError as err:
-                    out += '*** API error: %s\n' % (str(err))
-                    #return None
-            if os.path.isdir(f):
-                shutil.rmtree(f)
-                out += 'dir and any contained items deleted [%s]\n' % (f)
-                nfolders +=1
-            else:
-                os.remove(f)
-                out += 'file deleted [%s]\n' % (f)
-                nfiles +=1
-        notify('%d files and %d folders have been deleted.\n------------------------\n%s' % (nfiles,nfolders,out), 'success')
-        keys.set_text(keys_default_text)
-        selected_files = []
-        file_mode = None
-        build_pidrop_list('pidrop')
-
-    def export_files(self):
-        global selected_files
-        global file_mode
-        loading(exporter_listbox)
-        for p in selected_files:
-            dest = cfga['export-dir'] + os.sep + p.split(os.sep)[-1]
-            if os.path.isfile(p):
-                shutil.copy2(p, dest)
-            elif os.path.isdir(p):
-                for root, dirs, files in os.walk(p):
-                    if not os.path.isdir(dest):
-                        os.mkdir(dest)
-                    for f in files:
-
-                        #compute current (old) & new file locations
-                        oldLoc = root + os.sep + f
-                        newLoc = dest + os.sep + f
-                        if not os.path.isfile(newLoc):
-                            try:
-                                shutil.copy2(oldLoc, newLoc)
-                            except IOError:
-                                notify('file %f already exists' % (f), 'error')
-        selected_files = []
-        file_mode = None
-        notify('files have been exported.', 'success')
-        keys.set_text(keys_default_text)
-        build_pidrop_list('exporter')
-        walker.reset_all_nodes_style()
-
-    def import_files(self):
-        """ Import files in to a folder in the main dropbox folders
-        Files added locally only, if they go to a synce folder they'll be uploaded
-        on next sync"""
-        global import_files
-        global file_mode
-        rootlen = len(cfga['import-dir'])
-        if os.path.isdir(self.full_path):
-            p = self.full_path
-        else:
-            p = self.path
-        i=0
-        #new_items = []
-        for f in import_files:
-            newp = p+os.sep+os.path.basename(f)
-            os.rename(f, newp)
-            #new_items.append({'name':os.path.basename(f), 'path':p, 'sync':'unsync'})
-            i+=1
-        # if os.path.isdir(current_focus_browser_widget.full_path):
-        #     targ = current_focus_browser_widget.get_node()
-        # else:
-        #     targ = current_focus_browser_widget.get_node().get_parent()
-        # if 'children' in targ._value:
-        #     targ._value['children'] += new_items
-        # else:
-        #     targ._value['children'] = new_items
-        # targ.__init__(targ._value, targ._parent, targ._key, targ._depth)
-        build_pidrop_list()
-        notify('%d Selected files and folders were imported.' % (i), 'success')
-        keys.set_text(keys_default_text)
-        import_files = []
-        file_mode = None
+        caption = 'Rename %s to:\n' % (self.name)
+        inputbox =PiDropDirInput(caption, 'rename', self.full_path)
+        BROWSER.listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([inputbox]), 'search_box_active')
+        KEYPROMPT.set('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def new_dir(self):
-        global new_dir_location
-        global file_mode
         if os.path.isdir(self.full_path):
             new_dir_location = self.full_path
         else:
             new_dir_location = self.path
-        file_mode = 'new_dir'
-        listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([PiDropDirInput('New directory name:\n')]), 'search_box_active')
-        keys.set_text('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
+        caption = 'New directory name:\n'
+        inputbox = PiDropDirInput(caption, 'new_dir', new_dir_location)
+        BROWSER.listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([inputbox]), 'search_box_active')
+        KEYPROMPT.set('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
 class ImporterTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
+
+    path_properties_data = []
+
     def __init__(self, node):
         self.name = node.get_value()['name']
         self.path = node.get_value()['path']
@@ -570,33 +308,13 @@ class ImporterTreeWidget(urwid.TreeWidget):
     def selectable(self):
         return True
 
-    def keypress(self, size, key):
-        """allow subclasses to intercept keystrokes"""
-        key = self.__super.keypress(size, key)
-        if key:
-            key = self.unhandled_keys(size, key)
-        return key
-
-    def unhandled_keys(self, size, key):
-
-        path = self.get_node().get_value()['path']
-        fname = self.get_node().get_value()['name']
-
-        if key in ["s", "S"]:
-            self.add_to_selected(path+os.sep+fname)
-        elif key in ["p", "P"]:
-            self.more_path_details()
-        else:
-            return key
-
     def path_details(self):
-        global path_details_list
-        path_details_list = [urwid.Text('')]
-        path_details_list.append(urwid.Text('Full path: '+self.full_path))
+        self.path_properties_data = [urwid.Text('')]
+        self.path_properties_data.append(urwid.Text('Full path: '+self.full_path))
         if os.path.isfile(self.full_path):
             fsize = os.path.getsize(self.full_path)
-            path_details_list.append(urwid.Text('Size: '+readable_bytes(fsize)))
-        fdetails.original_widget = urwid.ListBox(path_details_list)
+            self.path_properties_data.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
     def more_path_details(self):
         if os.path.isdir(self.full_path):
@@ -607,64 +325,25 @@ class ImporterTreeWidget(urwid.TreeWidget):
                 nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            path_details_list.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+            self.path_properties_data.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
         else:
             mod = time.ctime(os.path.getmtime(self.full_path))
-            path_details_list.append(urwid.Text('Last modified: %s' % (str(mod))))
+            self.path_properties_data.append(urwid.Text('Last modified: %s' % (str(mod))))
             typ = subprocess.check_output(['file', '--mime-type', self.full_path])
             typstr = 'File type: %s' % (typ[len(self.full_path)+2:])
             typstr = typstr.strip()
-            path_details_list.append(urwid.Text(typstr))
+            self.path_properties_data.append(urwid.Text(typstr))
 
-        fdetails.original_widget = urwid.ListBox(path_details_list)
-
-    def add_to_selected(self,p):
-        global import_files;
-        global file_mode
-
-        # Check that we're not adding a file that exists in already added dir
-        parts = p[1:].split(os.sep)
-        jparts = ''
-        for part in parts:
-            jparts += os.sep+part
-            if jparts in import_files and jparts != p:
-                notify('A higher level parent directory is already in the list', 'error')
-                return
-
-        # Check that we're not adding a folder that already has child nodes in the list
-        if os.path.isdir(p):
-            for s in filter (lambda x: p in x, import_files):
-                if s != p:
-                    notify('To add this whole directory you first need to deselect any child nodes', 'error')
-                    return
-
-
-        if p == cfga['import-dir']:
-            notify('Cannot add the root directory to the selected list!', 'error')
-        else:
-            if p in import_files:
-                import_files.remove(p)
-                self._w.attr = 'body'#
-                self._w.focus_attr = 'dir focus'
-            else:
-                import_files.append(p)
-                self._w.attr = 'dir select'
-                self._w.focus_attr = 'dir select focus'
-                if os.path.isdir(p):
-                    self.expanded = False
-                    self.update_expanded_icon()
-            if len(import_files) > 0:
-                file_mode = 'import'
-                keys.set_text('Focus a directory in the main director browser and press [i] to import the files there.')
-            else:
-                file_mode = None
-                keys.set_text(keys_default_text)
+        PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
 
 class ExporterTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
+
+    path_properties_data = []
+
     def __init__(self, node):
         self.name = node.get_value()['name']
         self.path = node.get_value()['path']
@@ -696,13 +375,12 @@ class ExporterTreeWidget(urwid.TreeWidget):
             return key
 
     def path_details(self):
-        global path_details_list
-        path_details_list = [urwid.Text('')]
-        path_details_list.append(urwid.Text('Full path: '+self.full_path))
+        self.path_properties_data = [urwid.Text('')]
+        self.path_properties_data.append(urwid.Text('Full path: '+self.full_path))
         if os.path.isfile(self.full_path):
             fsize = os.path.getsize(self.full_path)
-            path_details_list.append(urwid.Text('Size: '+readable_bytes(fsize)))
-        fdetails.original_widget = urwid.ListBox(path_details_list)
+            self.path_properties_data.append(urwid.Text('Size: '+readable_bytes(fsize)))
+        PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
     def more_path_details(self):
         if os.path.isdir(self.full_path):
@@ -713,16 +391,16 @@ class ExporterTreeWidget(urwid.TreeWidget):
                 nfiles += 1
                 fname = os.path.join(path, f)
                 fsize += os.path.getsize(fname)
-            path_details_list.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
+            self.path_properties_data.append(urwid.Text('Size: %s (in %d files)' % (readable_bytes(fsize),nfiles)))
         else:
             mod = time.ctime(os.path.getmtime(self.full_path))
-            path_details_list.append(urwid.Text('Last modified: %s' % (str(mod))))
+            self.path_properties_data.append(urwid.Text('Last modified: %s' % (str(mod))))
             typ = subprocess.check_output(['file', '--mime-type', self.full_path])
             typstr = 'File type: %s' % (typ[len(self.full_path)+2:])
             typstr = typstr.strip()
-            path_details_list.append(urwid.Text(typstr))
+            self.path_properties_data.append(urwid.Text(typstr))
 
-        fdetails.original_widget = urwid.ListBox(path_details_list)
+        PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
 
 class PiDropNode(urwid.TreeNode):
@@ -841,21 +519,6 @@ class HelpTreeWidget(urwid.TreeWidget):
     def selectable(self):
         return True
 
-    def keypress(self, size, key):
-        key = self.__super.keypress(size, key)
-        if key:
-            key = self.unhandled_keys(size, key)
-        return key
-
-    def unhandled_keys(self, size, key):
-        if key in ['b', 'B']:
-            do_welcome_screen(None)
-        if key in ["f", "F"]:
-            do_filebrowser(None)
-        else:
-            return key
-
-
 class ImporterParentNode(urwid.ParentNode):
     """ Data storage object for interior/parent nodes """
     def load_widget(self):
@@ -938,22 +601,6 @@ class PiDropWalker(urwid.TreeWalker):
                 self.set_focus(p)
                 return
 
-    # def del_selected(self):
-    #     nodes = self.__iter__()
-    #     to_del = []
-    #     for node in nodes:
-    #         w = node.get_widget()
-    #         if hasattr(w, 'full_path') and w.full_path in selected_files:
-    #             to_del.append(node)
-    #     for n in to_del:
-    #         p = n.get_parent()
-    #         sibling_data = p._value['children']
-    #         sibling_data[:] = [d for d in sibling_data if d.get('path')+os.sep+d.get('name') != n.get_widget().full_path]
-    #         p._value['children'] = sibling_data
-    #         # p._child_keys = None
-    #         # p._children = {}
-    #         p.__init__(p._value, p._parent, p._key, p._depth)
-
     def __iter__(self):
         """
         Return an iterator over the positions in this ListBox.
@@ -991,37 +638,1018 @@ class MainContainer(urwid.Pile):
 
     def unhandled_keys(self, size, key):
         if key in ['b', 'B']:
-            do_welcome_screen(None)
+            WINDOW.screen(None, 'welcome')
         if key in ["f", "F"]:
-            do_filebrowser(None)
+            WINDOW.screen(None, 'browser')
         if key in ["c", "C"]:
-            do_config_menu(None)
+            WINDOW.screen(None, 'config')
         if key in ["h", "H"]:
-            do_help_menu(None)
+            WINDOW.screen(None, 'help')
         else:
             return key
 
-def empty_importer(i):
-    for the_file in os.listdir(cfga['import-dir']):
-        file_path = os.path.join(cfga['import-dir'], the_file)
-        try:
-            if os.path.isfile(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path): shutil.rmtree(file_path)
-        except Exception as e:
-            notify(str(e), 'error')
-    build_pidrop_list('importer')
+class PiDropTreeList(urwid.TreeListBox):
 
-def empty_exporter(i):
-    for the_file in os.listdir(cfga['export-dir']):
-        file_path = os.path.join(cfga['export-dir'], the_file)
-        try:
-            if os.path.isfile(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path): shutil.rmtree(file_path)
-        except Exception as e:
-            notify(str(e), 'error')
-    build_pidrop_list('exporter')
+    selected = [] # List of paths that are selected for operations
+    fmode = None # path operation mode (move, delete,...)
+
+    def keypress(self, size, key):
+        key = self.__super.keypress(size, key)
+        if key:
+            key = self.unhandled_keys(size, key)
+        return key
+
+    def unhandled_keys(self, size, key):
+        w = self.body.focus.get_widget()
+        if key in ["s", "S"]:
+            self.add_to_selected()
+
+        elif key in ['m','M']:
+            self.confirm_move_files()
+
+        elif key in ['d','D']:
+            self.confirm_del_files()
+
+        elif key in ['e','E']:
+            self.confirm_export_files()
+
+        elif key in ["i", "I"]:
+            self.confirm_import_files()
+
+        elif key in ["n", "N"]:
+            w.new_dir()
+
+        elif key in ["r", "R"]:
+            w.init_rename_path()
+
+        elif key in ["p", "P"]:
+            w.more_path_details()
+
+        elif key == 'enter':
+
+            if self.fmode == 'move':
+                self.move_files()
+
+            elif self.fmode == 'delete':
+                self.delete_files()
+
+            elif self.fmode == 'export':
+                self.export_files()
+
+            elif self.fmode == 'import':
+                self.import_files()
+
+        elif key == 'esc':
+            self.selected = []
+            self.fmode = None
+            KEYPROMPT.set()
+            NOTIFIER.clear(None)
+            #build_pidrop_list()
+            self.reload_walker()
+
+        else:
+            return key
+
+    def add_to_selected(self):
+        w = self.body.focus.get_widget()
+        # Check that we're not adding a file that exists in already added dir
+        parts = w.full_path[1:].split(os.sep)
+        jparts = ''
+        for part in parts:
+            jparts += os.sep+part
+            if jparts in self.selected and jparts != w.full_path:
+                NOTIFIER.set('A higher level parent directory is already in the list', 'error')
+                return
+
+        # Check that we're not adding a folder that already has child nodes in the list
+        if os.path.isdir(w.full_path):
+            for s in filter (lambda x: w.full_path in x, self.selected):
+                if s != w.full_path:
+                    NOTIFIER.set('To add this whole directory you first need to deselect any child nodes', 'error')
+                    return
+
+
+        if w.full_path == CONFIG.get('rootdir'):
+            NOTIFIER.set('Cannot add the root directory to the selected list!', 'error')
+        else:
+            if w.full_path in self.selected:
+                self.selected.remove(w.full_path)
+            else:
+                self.selected.append(w.full_path)
+                if os.path.isdir(w.full_path) and 'children' in self.body.focus.get_value():
+                    w.expanded = False
+                    w.update_expanded_icon()
+            if len(self.selected) > 0:
+                KEYPROMPT.set('[M]ove selected files | [D]elete selected files | [E]xport selected files | [esc] Cancel')
+            else:
+                KEYPROMPT.set()
+        w.set_style(self.selected)
+
+    def confirm_move_files(self):
+        if len(self.selected) > 0:
+            self.fmode = 'move'
+            KEYPROMPT.set('Select (focus) the destination and hit [ENTER] to confirm moving the selected files')
+        else:
+            self.fmode = None
+            NOTIFIER.set('No files selected!', 'error')
+
+    def move_files(self):
+        w = self.body.focus.get_widget()
+        rootlen = len(CONFIG.get('rootdir'))-1
+        if os.path.isdir(w.full_path):
+            p = w.full_path
+        else:
+            p = w.path
+        i=0
+        for f in self.selected:
+            newp = p+os.sep+f.split(os.sep)[-1]
+            if f in flist:
+                newp_remote = p+os.sep+flist[f]['name']
+                newp_remote = newp_remote[rootlen:]
+            else:
+                newp_remote = newp[rootlen:]
+            try:
+                res = dbx.files_move_v2(
+                    f[rootlen:], newp_remote,
+                    autorename=True)
+            except dropbox.exceptions.ApiError as err:
+                NOTIFIER.set('*** API error: %s' % (str(err)))
+                return None
+            new_local_path = os.sep + CONFIG.get('rootdir').strip(os.sep) + res.metadata.path_lower
+            os.rename(f, new_local_path)
+            if f in flist:
+                flist[new_local_path] = {'name':res.metadata.path_display.split(os.sep)[-1]}
+                del flist[f]
+            i+=1
+
+        save_flist_to_json(dir_path, flist)
+        self.reload_walker()
+        NOTIFIER.set('%d Selected files/folders were moved.' % (i), 'success')
+        KEYPROMPT.set()
+        self.selected = []
+        self.fmode = None
+
+    def confirm_del_files(self):
+        if len(self.selected) < 1:
+            self.add_to_selected()
+        self.fmode = 'delete'
+        KEYPROMPT.set('Press [ENTER] to confirm deletion of the selected files')
+
+    def delete_files(self):
+        rootlen = len(CONFIG.get('rootdir'))
+        nfiles = 0
+        nfolders = 0
+        out = ''
+        for f in self.selected:
+            try:
+                dbx.files_delete_v2(os.sep+f[rootlen:])
+            except dropbox.exceptions.ApiError as err:
+                    out += '*** API error: %s\n' % (str(err))
+            if os.path.isdir(f):
+                shutil.rmtree(f)
+                out += 'dir and any contained items deleted [%s]\n' % (f)
+                nfolders +=1
+            else:
+                os.remove(f)
+                out += 'file deleted [%s]\n' % (f)
+                nfiles +=1
+        NOTIFIER.set('%d files and %d folders have been deleted.\n------------------------\n%s' % (nfiles,nfolders,out), 'success')
+        KEYPROMPT.set()
+        self.selected = []
+        self.fmode = None
+        self.reload_walker()
+
+    def confirm_export_files(self):
+        if len(self.selected) < 1:
+            self.add_to_selected()
+        self.fmode = 'export'
+        KEYPROMPT.set('Press [ENTER] to confirm copying the selected files to the export folder')
+
+    def export_files(self):
+        loading(EXPORTER.listbox)
+        for p in self.selected:
+            dest = CONFIG.get('export-dir') + os.sep + p.split(os.sep)[-1]
+            if os.path.isfile(p):
+                shutil.copy2(p, dest)
+            elif os.path.isdir(p):
+                for root, dirs, files in os.walk(p):
+                    if not os.path.isdir(dest):
+                        os.mkdir(dest)
+                    for f in files:
+
+                        #compute current (old) & new file locations
+                        oldLoc = root + os.sep + f
+                        newLoc = dest + os.sep + f
+                        if not os.path.isfile(newLoc):
+                            try:
+                                shutil.copy2(oldLoc, newLoc)
+                            except IOError:
+                                NOTIFIER.set('file %f already exists' % (f), 'error')
+        self.selected = []
+        self.fmode = None
+        NOTIFIER.set('files have been exported.', 'success')
+        KEYPROMPT.set()
+        EXPORTER.listbox.reload_walker()
+        self.body.reset_all_nodes_style()
+
+    def confirm_import_files(self):
+        if len(IMPORTER.listbox.selected) > 0:
+            self.fmode = 'import'
+            KEYPROMPT.set('Press [ENTER] to confirm copying the selected files from the imports folder to here.')
+        else:
+            self.fmode = None
+            NOTIFIER.set('No files selected!', 'error')
+
+    def import_files(self):
+        """ Import files in to a folder in the main dropbox folders
+        Files added locally only, if they go to a synce folder they'll be uploaded
+        on next sync"""
+        loading(IMPORTER.listbox)
+        if len(IMPORTER.listbox.selected) < 1:
+            NOTIFIER.set('No files selected in importer', 'error')
+        w = self.body.focus.get_widget()
+        rootlen = len(CONFIG.get('import-dir'))
+        if os.path.isdir(w.full_path):
+            p = w.full_path
+        else:
+            p = w.path
+        i=0
+        for f in IMPORTER.listbox.selected:
+            newp = p+os.sep+os.path.basename(f)
+            os.rename(f, newp)
+            i+=1
+        #build_pidrop_list('importer')
+        self.reload_walker()
+        IMPORTER.listbox.reload_walker()
+        NOTIFIER.set('%d Selected files and folders were imported.' % (i), 'success')
+        KEYPROMPT.set()
+        IMPORTER.listbox.selected = []
+        self.fmode = None
+
+    def reload_walker(self):
+        loading(BROWSER.listbox_container)
+        data = BROWSER.fetch_dir_data()[0]
+        topnode = PiDropParentNode(data)
+        self.body = PiDropWalker(topnode)
+        self.body.reset_focus()
+        self.body.reset_all_nodes_style()
+        BROWSER.listbox_container.original_widget = BROWSER.listbox
+
+class ImporterTreeList(urwid.TreeListBox):
+    selected = []
+
+    def keypress(self, size, key):
+        """allow subclasses to intercept keystrokes"""
+        key = self.__super.keypress(size, key)
+        if key:
+            key = self.unhandled_keys(size, key)
+        return key
+
+    def unhandled_keys(self, size, key):
+
+        if key in ["s", "S"]:
+            self.add_to_selected()
+        elif key in ["p", "P"]:
+            self.body.focus.get_widget().more_path_details()
+        else:
+            return key
+
+    def add_to_selected(self):
+        w = self.body.focus.get_widget()
+        # Check that we're not adding a file that exists in already added dir
+        parts = w.full_path[1:].split(os.sep)
+        jparts = ''
+        for part in parts:
+            jparts += os.sep+part
+            if jparts in self.selected and jparts != w.full_path:
+                NOTIFIER.set('A higher level parent directory is already in the list', 'error')
+                return
+
+        # Check that we're not adding a folder that already has child nodes in the list
+        if os.path.isdir(w.full_path):
+            for s in filter (lambda x: w.full_path in x, self.selected):
+                if s != w.full_path:
+                    NOTIFIER.set('To add this whole directory you first need to deselect any child nodes', 'error')
+                    return
+
+
+        if w.full_path == CONFIG.get('import-dir'):
+            NOTIFIER.set('Cannot add the root directory to the selected list!', 'error')
+        else:
+            if w.full_path in self.selected:
+                self.selected.remove(w.full_path)
+                w._w.attr = 'body'#
+                w._w.focus_attr = 'dir focus'
+            else:
+                self.selected.append(w.full_path)
+                w._w.attr = 'dir select'
+                w._w.focus_attr = 'dir select focus'
+                if os.path.isdir(w.full_path):
+                    w.expanded = False
+                    w.update_expanded_icon()
+            if len(self.selected) > 0:
+                KEYPROMPT.set('Focus a directory in the main director browser and press [i] to import the files there.')
+            else:
+                KEYPROMPT.set()
+
+    def reload_walker(self):
+        loading(IMPORTER.listbox_container)
+        data = get_pidrop_dir(CONFIG.get('import-dir'))[0]
+        topnode = ImporterParentNode(data)
+        self.body = DirWalker(topnode)
+        IMPORTER.listbox_container.original_widget = IMPORTER.listbox
+
+class ExporterTreeList(urwid.TreeListBox):
+
+    def reload_walker(self):
+        loading(EXPORTER.listbox_container)
+        data = get_pidrop_dir(CONFIG.get('export-dir'))[0]
+        topnode = ExporterParentNode(data)
+        self.body = DirWalker(topnode)
+        EXPORTER.listbox_container.original_widget = EXPORTER.listbox
+
+class ImporterWidget(object):
+
+    def __init__(self):
+        self.listbox = self.set_listbox()
+        self.btn = self.set_btn()
+
+    def set_listbox(self):
+        data = get_dir(CONFIG.get('import-dir'))[0]
+        topnode = ImporterParentNode(data)
+        return ImporterTreeList(DirWalker(topnode))
+
+    def set_btn(self):
+        btn = urwid.Button('Empty Import folder')
+        urwid.connect_signal(btn, 'click', self.empty)
+        return btn
+
+    def build(self):
+        footer = urwid.Padding(self.btn, left=2, right=2)
+        footer = urwid.Pile([divider,footer,divider])
+        footer = urwid.AttrWrap(footer, 'footer')
+        self.listbox_container = urwid.AttrWrap(urwid.Padding(self.listbox, left=2, right=2), 'importer')
+        return urwid.Frame(
+            self.listbox_container,
+            header=urwid.AttrWrap(urwid.Text('Importer folder'), 'header'),
+            footer =urwid.AttrWrap(footer, 'footer')
+        )
+
+    def empty(self,d):
+        for the_file in os.listdir(CONFIG.get('import-dir')):
+            file_path = os.path.join(CONFIG.get('import-dir'), the_file)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path): shutil.rmtree(file_path)
+            except Exception as e:
+                NOTIFIER.set(str(e), 'error')
+        self.listbox.reload_walker()
+
+class ExporterWidget(object):
+
+    def __init__(self):
+        self.listbox = self.set_listbox()
+        self.btn = self.set_btn()
+
+    def set_listbox(self):
+        data = get_dir(CONFIG.get('export-dir'))[0]
+        topnode = ExporterParentNode(data)
+        return ExporterTreeList(DirWalker(topnode))
+
+    def set_btn(self):
+        btn = urwid.Button('Empty Export folder')
+        urwid.connect_signal(btn, 'click', self.empty)
+        return btn
+
+    def build(self):
+        footer = urwid.Padding(self.btn, left=2, right=2)
+        footer = urwid.Pile([divider,footer,divider])
+        footer = urwid.AttrWrap(footer, 'footer')
+        self.listbox_container = urwid.AttrWrap(urwid.Padding(self.listbox, left=2, right=2), 'exporter')
+        return urwid.Frame(
+            self.listbox_container,
+            header=urwid.AttrWrap(urwid.Text('Exporter folder'), 'header'),
+            footer =urwid.AttrWrap(footer, 'footer')
+        )
+
+    def empty(self,d):
+        for the_file in os.listdir(CONFIG.get('export-dir')):
+            file_path = os.path.join(CONFIG.get('export-dir'), the_file)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path): shutil.rmtree(file_path)
+            except Exception as e:
+                NOTIFIER.set(str(e), 'error')
+        self.listbox.reload_walker()
+
+class FileBrowserWidget(object):
+
+    def __init__(self):
+        load_synced_file_list()
+        self.listbox = self.set_listbox()
+
+    def build(self):
+        lb = urwid.AttrWrap(self.listbox, 'body')
+        self.listbox_container = urwid.AttrWrap(urwid.Frame(lb), 'body')
+        return self.listbox_container
+
+    def set_listbox(self):
+        data = self.fetch_dir_data()[0]
+        topnode = PiDropParentNode(data)
+        walker = PiDropWalker(topnode)
+        return  PiDropTreeList(walker)
+
+    def fetch_dir_data(self):
+        dir = {}
+        rootdir = CONFIG.get('rootdir').rstrip(os.sep)
+        start = rootdir.rfind(os.sep) + 1
+        for path, dirs, files in os.walk(rootdir):
+            folders = path[start:].split(os.sep)
+            subdir = dict.fromkeys(files)
+            parent = reduce(dict.get, folders[:-1], dir)
+            parent[folders[-1]] = subdir
+        return self.format_dir_data(dir, rootdir[:-len(rootdir)+start-1])
+
+    def format_dir_data(self, dir, path, overide_sync_check=False):
+        out=[]
+        rpath = ''
+        for k,v in dir.items():
+            osc = overide_sync_check
+            fpath = path+os.sep+k
+            if overide_sync_check:
+                sync = 'override'
+            elif os.path.isdir(path+os.sep+k):
+                if fpath not in flist and not fnmatch.filter(flist, fpath+os.sep+'*'):
+                    # No dirs or subdirs are being synced
+                    # Override any checks in sub dirs
+                    sync = 'nosync'
+                    osc = True
+                elif self.path_has_unsynced_children(fpath):
+                    sync = 'unsync'
+                else:
+                    sync = 'sync'
+            elif os.path.isfile(fpath) and fpath in flist:
+                sync = 'sync'
+            else:
+                if self.path_has_synced_parent(fpath):
+                    sync = 'unsync'
+                else:
+                    sync = 'nosync'
+
+            children = []
+            if(v):
+                children=self.format_dir_data(v,fpath,osc)
+            o = {'name':k, 'path':path, 'sync':sync}
+            if len(children) > 0:
+                o['children']  = children
+            shared = self.is_shared(fpath)
+            if shared:
+                o['shared'] = shared
+            out.append(o)
+        return out
+
+    def is_shared(self, path):
+        if path not in flist:
+            return False
+        elif 'shared' in flist[path]:
+            return flist[path]['shared']
+        return False
+
+    def path_has_synced_parent(self, p):
+        rlen = len(CONFIG.get('rootdir'))
+        rpath = p[rlen:]
+        parts = rpath.split(os.sep)
+        op = ''
+        for part in parts:
+            op = op+os.sep+part
+            op = op.strip(os.sep)
+            if op in CONFIG.get('folders'):
+                return True
+        return False
+
+    def path_has_unsynced_children(self, p):
+        for path, dirs, files in os.walk(p):
+            for f in files:
+                fullname = os.path.join(path, f)
+                if fullname not in flist:
+                    return True
+            for d in dirs:
+                fullname = os.path.join(path, d)
+                if fullname not in flist:
+                    return True
+        return False
+
+class PropsWidget(object):
+
+    def __init__(self):
+        self.content = urwid.AttrWrap(
+                            urwid.ListBox([
+                                    urwid.Text('file and folder details will appear here')
+                            ]),'details')
+
+    def build(self):
+        pile = urwid.Pile([self.content])
+        return urwid.Frame(
+            urwid.AttrWrap(urwid.Padding(pile, left=2, right=2),'details'),
+            header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header')
+        )
+
+class SearchBarWidget(object):
+
+    search_term = None
+    in_folder = False # folder to perform search in. False = all
+    regex = False
+
+    def __init__(self):
+        self.inputbox = self.set_inputbox()
+
+    def build(self):
+        ftog = urwid.CheckBox('current folder only', on_state_change=self.ftoggle)
+        regextog = urwid.CheckBox('regex', on_state_change=self.regextoggle)
+        self.bar = urwid.Columns([urwid.AttrWrap(self.inputbox, 'search_box'),(24, ftog),(10, regextog) ])
+        return self.bar
+
+    def set_inputbox(self):
+        inp = PiDropSearchInput('Search:')
+        urwid.connect_signal(inp, 'change', self.set_search)
+        return inp
+
+    def set_search(self, w, txt):
+        if len(txt) > 0:
+            self.search_term = txt
+        else:
+            self.search_term = None
+
+    def ftoggle(self, w, d):
+        if d:
+            self.in_folder = current_focus_folder
+        else:
+            self.in_folder = False
+
+    def regextoggle(self, w, d):
+        self.regex = d
+
+    def build_search_list(self):
+        global SEARCHLIST
+        SEARCHLIST = SearchListWidget()
+
+        WINDOW.left.original_widget = SEARCHLIST.build()
+
+class SearchListWidget(object):
+
+    def __init__(self):
+        self.listbox = self.set_listbox()
+
+    def set_listbox(self):
+        data = self.get_search_list()
+        topnode = PiDropParentNode(data)
+        walker = PiDropWalker(topnode)
+        return urwid.AttrWrap(urwid.TreeListBox(walker),'body')
+
+    def build(self):
+        close_search = urwid.Button('close')
+        urwid.connect_signal(close_search, 'click', self.clear_search_list)
+        return urwid.Pile([
+            ('pack',messages),
+            urwid.Padding(BROWSER.listbox, left=1, right=1),
+            ('pack',divider),
+            urwid.Padding(urwid.AttrWrap(urwid.LineBox(urwid.Columns([self.listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
+            ('pack',divider),
+            ('pack',urwid.Padding(SEARCHBAR.bar, left=2, right=2))
+        ],3)
+
+    def clear_search_list(self,d):
+        SEARCHBAR.search_term = None
+        WINDOW.left.original_widget = urwid.Pile([
+            ('pack',messages),
+            urwid.Padding(BROWSER.listbox, left=1, right=1),
+            ('pack',divider),
+            ('pack',urwid.Padding(SEARCHBAR.bar, left=2, right=2))
+        ])
+
+    def get_search_list(self):
+        result = []
+
+        if SEARCHBAR.in_folder:
+            f = SEARCHBAR.in_folder
+        else:
+            f = CONFIG.get('rootdir')
+
+        if SEARCHBAR.regex:
+            pattern = re.compile(SEARCHBAR.search_term)
+            for root, dirs, files in os.walk(f):
+                for name in files:
+                    if pattern.match(name):
+                        result.append({'name':name,'path':root})
+                for name in dirs:
+                    if pattern.match(name):
+                        result.append({'name':name,'path':root})
+        else:
+            pattern = '*'+SEARCHBAR.search_term.lower()+'*'
+
+            for root, dirs, files in os.walk(f):
+                for name in files:
+                    if fnmatch.fnmatch(name.lower(), pattern):
+                        result.append({'name':name,'path':root})
+                for name in dirs:
+                    if fnmatch.fnmatch(name.lower(), pattern):
+                        result.append({'name':name,'path':root})
+
+        return {'name':'Search Results for ['+SEARCHBAR.search_term+'] in '+f+':', 'path':'[[SEARCH]]', 'children':result}
+
+class NotificationsWidget(object):
+
+    def __init__(self):
+        self.message = urwid.AttrWrap(urwid.Text(''), 'body')
+
+    def build(self):
+        return self.message
+
+    def set(self, msg, attr='notif'):
+        close = urwid.Button('X')
+        urwid.connect_signal(close, 'click', self.clear)
+        outp = urwid.Padding(urwid.Text('\n%s\n' % (msg)),left=2,right=2)
+        cols = urwid.AttrWrap(urwid.Columns([outp, (5, close)]),attr)
+        self.message.original_widget = cols
+
+    def clear(self, d):
+        self.message.original_widget = urwid.AttrWrap(urwid.Text(''), 'body')
+
+class KeyPromptWidget(object):
+
+    default_text = '[B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp | [Q]uit'
+
+    def __init__(self):
+        self.txt = urwid.Text(self.default_text)
+
+    def build(self):
+        return urwid.AttrWrap(self.txt, 'footer')
+
+    def set(self, text=False):
+        if not text:
+            text = self.default_text
+        self.txt.set_text(text)
+
+class ConfigWidget(object):
+
+    def __init__(self):
+        self.errbox = urwid.AttrWrap(urwid.Text(''),'error')
+        self.menu = urwid.AttrWrap(urwid.ListBox([]),'body')
+        self.title = urwid.Text('')
+
+        self.screen(None, 'home')
+
+    def build(self):
+
+        return urwid.Padding(MainContainer([('pack',divider),('pack',urwid.AttrWrap(self.title,'details')),('pack',divider), self.menu]), left=5, right=5, width=120, align='center')
+
+    def screen(self, d, screen):
+        if screen == 'home':
+            self.menu.original_widget = self.home()
+        if screen == 'dirs':
+            self.menu.original_widget = self.dirs()
+        if screen == 'theme':
+            self.menu.original_widget = self.theme()
+        if screen == 'sync':
+            self.menu.original_widget = self.sync()
+        if screen == 'updown':
+            self.menu.original_widget = self.updown()
+
+    def updown(self):
+        self.cfg = CONFIG.get()
+        cfg_menu = []
+        if 'connection_tout' not in self.cfg:
+            self.cfg['connection_tout'] = 30
+        if 'large_upload_size' not in self.cfg:
+            self.cfg['large_upload_size'] = 100
+        if 'chunk_size' not in self.cfg:
+            self.cfg['chunk_size'] = 10
+        if 'daily_limit' not in self.cfg:
+            self.cfg['daily_limit'] = 0
+        connection_tout = urwid.IntEdit('Connection timeout:', self.cfg['connection_tout'])
+        urwid.connect_signal(connection_tout,'change',self.change_temp_cfg, 'connection_tout')
+        conn_row = urwid.Columns([(26,connection_tout),(7,urwid.Text('seconds'))])
+        cfg_menu.append(conn_row)
+        cfg_menu.append(divider)
+        large_upl_n = urwid.IntEdit('Split uploads larger than [ ', self.cfg['large_upload_size'])
+        urwid.connect_signal(large_upl_n,'change',self.change_temp_cfg, 'large_upload_size')
+        chunk = urwid.IntEdit('in to [ ', self.cfg['chunk_size'])
+        urwid.connect_signal(chunk,'change',self.change_temp_cfg, 'chunk_size')
+        chunkn_row = urwid.Columns([(33,large_upl_n),(7,urwid.Text('MB ] ')), (11,chunk), (12,urwid.Text('MB ] chunks '))])
+        cfg_menu.append(chunkn_row)
+        cfg_menu.append(divider)
+        daily_limit = urwid.IntEdit('Daily upload/download limit: ', self.cfg['daily_limit'])
+        urwid.connect_signal(daily_limit,'change',self.change_temp_cfg, 'daily_limit')
+        daily_row = urwid.Columns([(36,daily_limit), (19,urwid.Text('MB (0 = no limit) '))])
+        cfg_menu.append(daily_row)
+        cfg_menu.append(divider)
+        save = urwid.Button('Save and exit')
+        urwid.connect_signal(save,'click',self.save_updown)
+        back = urwid.Button('Exit without saving')
+        urwid.connect_signal(back,'click',self.screen, 'home')
+        cfg_menu.append(style_btn(save))
+        cfg_menu.append(style_btn(back))
+        return urwid.ListBox(cfg_menu)
+
+    def save_updown(self, w):
+        update_config(self.cfg)
+        self.screen(None, 'home')
+
+    def theme(self):
+        outlist = []
+        opts = ['light','dark','system defaults']
+        if CONFIG.get('palette'):
+            p = CONFIG.get('palette')
+        else: p = 'light'
+        for name in opts:
+            if name == p:
+                outlist.append(urwid.CheckBox(name, state=True, user_data=name, on_state_change=self.set_theme))
+            else:
+                outlist.append(urwid.CheckBox(name, state=False, user_data=name, on_state_change=self.set_theme))
+        back = urwid.Button('Back')
+        outlist.append(divider)
+        outlist.append(style_btn(back))
+        urwid.connect_signal(back,'click',self.screen, 'home')
+        return urwid.ListBox(outlist)
+
+    def set_theme(self, w, state, name):
+        CONFIG.set(name, 'palette')
+        LOOP.screen.register_palette(palettes[name])
+        LOOP.screen.clear()
+        self.screen(None, 'theme')
+
+    def home(self):
+        self.title.set_text('Select an option below')
+        opt_dirs = urwid.Button('Set the locations for your PiDrop directories')
+        urwid.connect_signal(opt_dirs,'click',self.screen, 'dirs')
+        opt_sync = urwid.Button('Select which Dropbox directories to sync')
+        urwid.connect_signal(opt_sync,'click',self.screen, 'sync')
+        opt_theme = urwid.Button('Select a theme')
+        urwid.connect_signal(opt_theme,'click',self.screen, 'theme')
+        opt_updown = urwid.Button('Upload/download settings')
+        urwid.connect_signal(opt_updown,'click',self.screen, 'updown')
+
+        back = urwid.Button('Back')
+        urwid.connect_signal(back,'click', WINDOW.screen, 'welcome')
+        return urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_updown),style_btn(opt_theme),divider,style_btn(back)])
+
+    def sync(self):
+        if CONFIG.get('all_remote_folders'):
+            outlist = []
+            if CONFIG.get('sync_depth'):
+                sd = CONFIG.get('sync_depth')
+            else: sd = 1
+            leveldown = urwid.Button(' - ')
+            level = urwid.Text(' Directory Depth: %d' % (sd))
+            levelup = urwid.Button(' + ')
+            level_ctrl = urwid.Columns([(7,urwid.AttrWrap(leveldown,'button')),(20,level),(7,urwid.AttrWrap(levelup,'button'))])
+            urwid.connect_signal(leveldown, 'click', self.change_sync_depth, sd-1)
+            urwid.connect_signal(levelup, 'click', self.change_sync_depth, sd+1)
+            remote_folders = CONFIG.get('all_remote_folders')['folders'] #list_remote_folders()
+            outlist.append(level_ctrl)
+            upd = urwid.Button('Update List')
+            urwid.connect_signal(upd,'click',self.update_folder_list)
+            update_row = urwid.Columns([(15, urwid.AttrWrap(upd, 'details')),urwid.Text('(Last updated %s)' % (CONFIG.get('all_remote_folders')['upd']))])
+            outlist.append(divider)
+            outlist.append(update_row)
+            outlist.append(divider)
+            for name in remote_folders:
+                name =name.strip(os.sep)
+                depth = name.count(os.sep)
+                if depth < sd:
+                    display_txt = '%s %s' % ('  '*depth, name.split(os.sep)[-1])
+                    if name in CONFIG.get('folders'):
+                        outlist.append(urwid.CheckBox(display_txt, state=True, user_data=name, on_state_change=self.set_sync))
+                    else:
+                        outlist.append(urwid.CheckBox(display_txt, state=False, user_data=name, on_state_change=self.set_sync))
+            back = urwid.Button('Back')
+            outlist.append(divider)
+            outlist.append(self.errbox)
+            outlist.append(style_btn(back))
+            urwid.connect_signal(back,'click',self.screen, 'home')
+            return urwid.ListBox(outlist)
+        else:
+            msg = urwid.Text('You haven\'t yet retrieved your directory structure from Dropbox. Please click the button below. This may take a few minutes...')
+            btn = urwid.Button('Fetch list')
+            urwid.connect_signal(btn,'click',self.update_folder_list)
+            return urwid.ListBox([msg, divider, btn])
+
+    def update_folder_list(self, d):
+        folders = self.retrieve_folder_list()
+        CONFIG.set({
+            'folders':folders,
+            'upd':str(datetime.datetime.now())
+        }, 'all_remote_folders')
+        self.screen(None, 'sync')
+
+    def retrieve_folder_list(self, cursor=None):
+        if cursor is not None:
+            res = dbx.files_list_folder_continue(cursor)
+        else:
+            res = dbx.files_list_folder('', recursive=True)
+        folders = []
+        for entry in res.entries:
+            if isinstance(entry, dropbox.files.FolderMetadata):
+                folders.append(entry.path_lower)
+        if res.has_more:
+            folders.extend(self.retrieve_folder_list(res.cursor))
+        folders.sort()
+        return folders
+
+    def change_sync_depth(self, w,i):
+        folders = CONFIG.get('folders')
+        if i < 1:
+            i = 1
+        if i > 5:
+            i = 5
+        for f in folders:
+            if f.count('/') > i-1:
+                folders.remove(f)
+        CONFIG.set(folders, 'folders')
+        CONFIG.set(i, 'sync_depth')
+        self.screen(None, 'sync')
+
+    def set_sync(self, w, state, name):
+        folders = CONFIG.get('folders')
+        if name in folders:
+            if not state:
+                folders.remove(name)
+        elif state:
+            folders.append(name)
+        CONFIG.set(folders, 'folders')
+
+    def dirs(self):
+        self.cfg = CONFIG.get()
+        root_dir = urwid.Edit('PiDrop Root Directory: ', self.cfg['rootdir'])
+        urwid.connect_signal(root_dir,'change',self.change_temp_cfg, 'rootdir')
+        import_dir = urwid.Edit('Imports Directory: ', self.cfg['import-dir'])
+        urwid.connect_signal(import_dir,'change',self.change_temp_cfg, 'import-dir')
+        export_dir = urwid.Edit('Exports Directory: ', self.cfg['export-dir'])
+        urwid.connect_signal(export_dir,'change',self.change_temp_cfg, 'export-dir')
+        save = urwid.Button('Save and exit')
+        urwid.connect_signal(save,'click',self.save_dirs)
+        back = urwid.Button('Exit without saving')
+        urwid.connect_signal(back,'click',self.screen, 'home')
+        cfg_menu = [root_dir,import_dir,export_dir,self.errbox]
+        cfg_menu.append(style_btn(save))
+        cfg_menu.append(style_btn(back))
+        return urwid.ListBox(cfg_menu)
+
+    def change_temp_cfg(self, w, v, setting):
+        self.cfg[setting] = v
+
+    def save_dirs(self, w):
+        if not os.path.isdir(self.cfg['rootdir']):
+            self.errbox.set_text('\nRoot Directory is not a valid directory\n')
+        elif not os.path.isdir(self.cfg['export-dir']):
+            self.errbox.set_text('\nExport Directory is not a valid directory\n')
+        elif not os.path.isdir(self.cfg['import-dir']):
+            self.errbox.set_text('\nImport Directory is not a valid directory\n')
+        else:
+            update_config(self.cfg)
+            self.screen(None, 'dirs')
+
+
+class PiDropWindow(object):
+
+    screens = {}
+
+    def __init__(self):
+        global collapse_cache
+        global dbx
+        global KEYPROMPT
+        KEYPROMPT = KeyPromptWidget()
+        collapse_cache = {}
+        dbx = connect_dbx()
+        self.palette = self.set_palette()
+        self.main = urwid.AttrWrap(urwid.ListBox([]), 'body')
+        self.screen(None, 'welcome')
+        self.header = urwid.Text('PiDrop - manage your dropbox')
+        self.footer = urwid.Pile([divider,KEYPROMPT.build(),divider])
+
+    def screen(self, d, screen):
+        if screen in self.screens:
+            self.main.original_widget = self.screens[screen]
+        elif screen == 'welcome':
+            self.screens[screen] = self.welcome()
+            self.main.original_widget = self.screens[screen]
+        elif screen == 'browser':
+            self.screens[screen] = self.browser()
+            self.main.original_widget = self.screens[screen]
+        elif screen == 'help':
+            self.screens[screen] = self.help()
+            self.main.original_widget = self.screens[screen]
+        elif screen == 'config':
+            self.screens[screen] = self.config()
+            self.main.original_widget = self.screens[screen]
+
+    def set_palette(self):
+        if CONFIG.get('palette'):
+            return palettes[CONFIG.get('palette')]
+        else: return palettes['light']
+
+    def build(self):
+        return urwid.AttrWrap(urwid.Frame(
+            self.main,
+            header=urwid.AttrWrap(self.header, 'header'),
+            footer=urwid.AttrWrap(self.footer, 'footer')
+        ),'body')
+
+    def welcome(self):
+        KEYPROMPT.set(' ')
+        welcome = urwid.AttrWrap(urwid.LineBox(urwid.Text('Select an option below by either clicking the option or pressing the associated key')),'details')
+        browser_btn = urwid.Button('[F]ile Browser/Manager')
+        urwid.connect_signal(browser_btn,'click',self.screen, 'browser')
+        config_btn  = urwid.Button('[C]onfigure PiDrop')
+        urwid.connect_signal(config_btn,'click',self.screen, 'config')
+        help_btn  = urwid.Button('[H]elp')
+        urwid.connect_signal(help_btn,'click',self.screen, 'help')
+        options = urwid.ListBox([style_btn(browser_btn),style_btn(config_btn),style_btn(help_btn)])
+        return urwid.Padding(urwid.Filler(MainContainer([('pack',divider),('pack',welcome),('pack',divider), options]), height=10), left=5, right=5, width=70, align='center')
+
+    def help(self):
+        KEYPROMPT.set('[B]ack to main menu | [F]ile browser | [C]onfig | [Q]uit')
+        data = help_questions
+        topnode = HelpParentNode(data)
+        helplist = urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
+        nfo = urwid.LineBox(urwid.Text("""
+            Welcome to the help menu.
+            -------------------------
+            Use your mouse or the arrow keys on your keyboard to navigate through though question/answer list below.
+
+            Throughout this UI you will find a list of available keys for the current screen in the footer."""))
+        return MainContainer([('pack',divider),('pack',nfo),('pack',divider), helplist])
+
+    def config(self):
+        w = ConfigWidget()
+        return w.build()
+
+    def browser(self):
+        global IMPORTER
+        global EXPORTER
+        global PROPSBOX
+        global BROWSER
+        global SEARCHBAR
+        global NOTIFIER
+        loading(WINDOW.main)
+        KEYPROMPT.set()
+
+        IMPORTER = ImporterWidget()
+        EXPORTER = ExporterWidget()
+        PROPSBOX = PropsWidget()
+        BROWSER = FileBrowserWidget()
+        SEARCHBAR = SearchBarWidget()
+        NOTIFIER = NotificationsWidget()
+
+        self.right = urwid.AttrWrap(
+            urwid.Padding(
+                urwid.Pile([
+                    ('pack',divider),
+                    urwid.LineBox(PROPSBOX.build()),
+                    urwid.LineBox(IMPORTER.build()),
+                    urwid.LineBox(EXPORTER.build())]
+                ),
+                right=1
+            ),
+            'body'
+        )
+        self.left = urwid.AttrWrap(urwid.Pile([
+            ('pack',NOTIFIER.build()),
+            urwid.Padding(BROWSER.build(), left=1, right=1),
+            ('pack',divider),
+            ('pack',urwid.Padding(SEARCHBAR.build(), left=2, right=2))
+        ]),'body')
+
+        return MainContainer([urwid.Columns([('weight', 3,self.left), self.right])])
+
+class Cfg(object):
+
+    def __init__(self):
+        self.data = self.load()
+
+    def get(self, key=False):
+        if not key:
+            return self.data
+        elif key in self.data:
+            return self.data[key]
+        return false
+
+    def load(self):
+        with open(dir_path+'/cfg.json') as json_file:
+            return json.load(json_file)
+        return {}
+
+    def set(self, data, key=False):
+        if key:
+            self.data[key] = data
+        else:
+            self.data = data
+        with open(dir_path+'/cfg.json', 'w') as outfile:
+                json.dump(self.data, outfile)
+
+
 
 def unhandled_input(k):
     # update display of focus directory
@@ -1058,648 +1686,30 @@ def format_dir(dir, path, overide_sync_check=False):
         out.append(o)
     return out
 
-def get_pidrop_dir(rootdir):
-    """
-    Creates a nested dictionary that represents the folder structure of rootdir
-    """
-    load_synced_file_list()
-    dir = {}
-    rootdir = rootdir.rstrip(os.sep)
-    start = rootdir.rfind(os.sep) + 1
-    for path, dirs, files in os.walk(rootdir):
-        folders = path[start:].split(os.sep)
-        subdir = dict.fromkeys(files)
-        parent = reduce(dict.get, folders[:-1], dir)
-        parent[folders[-1]] = subdir
-    return format_pidrop_dir(dir, rootdir[:-len(rootdir)+start-1])
 
-def format_pidrop_dir(dir, path, overide_sync_check=False):
-    out=[]
-    rpath = ''
-    for k,v in dir.items():
-        osc = overide_sync_check
-        fpath = path+os.sep+k
-        if overide_sync_check:
-            sync = 'override'
-        elif os.path.isdir(path+os.sep+k):
-            if fpath not in flist and not fnmatch.filter(flist, fpath+os.sep+'*'):
-                # No dirs or subdirs are being synced
-                # Override any checks in sub dirs
-                sync = 'nosync'
-                osc = True
-            elif path_has_unsynced_children(fpath):
-                sync = 'unsync'
-            else:
-                sync = 'sync'
-        elif os.path.isfile(fpath) and fpath in flist:
-            sync = 'sync'
-        else:
-            if path_has_synced_parent(fpath):
-                sync = 'unsync'
-            else:
-                sync = 'nosync'
-
-        children = []
-        if(v):
-            children=format_pidrop_dir(v,fpath,osc)
-        o = {'name':k, 'path':path, 'sync':sync}
-        if len(children) > 0:
-            o['children']  = children
-        shared = is_shared(fpath)
-        if shared:
-            o['shared'] = shared
-        out.append(o)
-    return out
-
-def is_shared(path):
-    if path not in flist:
-        return False
-    elif 'shared' in flist[path]:
-        return flist[path]['shared']
-    return False
-
-def path_has_synced_parent(p):
-    rlen = len(cfga['rootdir'])
-    rpath = p[rlen:]
-    parts = rpath.split(os.sep)
-    op = ''
-    for part in parts:
-        op = op+os.sep+part
-        op = op.strip(os.sep)
-        if op in cfga['folders']:
-            return True
-    return False
-
-
-def path_has_unsynced_children(p):
-    for path, dirs, files in os.walk(p):
-        for f in files:
-            fullname = os.path.join(path, f)
-            if fullname not in flist:
-                return True
-        for d in dirs:
-            fullname = os.path.join(path, d)
-            if fullname not in flist:
-                return True
-    return False
-
-def notify(msg, attr='notif'):
-    close = urwid.Button('X')
-    urwid.connect_signal(close, 'click', clear_notify)
-    outp = urwid.Padding(urwid.Text('\n%s\n' % (msg)),left=2,right=2)
-    cols = urwid.AttrWrap(urwid.Columns([outp, (5, close)]),attr)
-    messages.original_widget = cols
-
-def clear_notify(w):
-    messages.original_widget = urwid.AttrWrap(urwid.Text(''), 'body')
-
-def set_search(w, txt):
-    global search_term
-    if len(txt) > 0:
-        search_term = txt
-    else:
-        search_term = None
-
-def get_search_list():
-    result = []
-
-    if search_current_folder:
-        f = search_current_folder
-    else:
-        f = cfga['rootdir']
-
-    if search_regex:
-        pattern = re.compile(search_term)
-        for root, dirs, files in os.walk(f):
-            for name in files:
-                if pattern.match(name):
-                    result.append({'name':name,'path':root})
-            for name in dirs:
-                if pattern.match(name):
-                    result.append({'name':name,'path':root})
-    else:
-        pattern = '*'+search_term.lower()+'*'
-
-        for root, dirs, files in os.walk(f):
-            for name in files:
-                if fnmatch.fnmatch(name.lower(), pattern):
-                    result.append({'name':name,'path':root})
-            for name in dirs:
-                if fnmatch.fnmatch(name.lower(), pattern):
-                    result.append({'name':name,'path':root})
-
-    return {'name':'Search Results for ['+search_term+'] in '+f+':', 'path':'[[SEARCH]]', 'children':result}
-
-def build_pidrop_list(dir='*'):
-    if dir in ['*', 'pidrop']:
-        loading(listbox)
-        listbox.original_widget = get_pidrop_listbox()
-        walker.reset_focus()
-
-    if dir in ['*', 'importer']:
-        loading(importer_listbox)
-        importer_listbox.original_widget = get_importer_listbox()
-
-    if dir in ['*', 'exporter']:
-        loading(exporter_listbox)
-        exporter_listbox.original_widget = get_exporter_listbox()
-
-    if 'search_term' in globals() and search_term != None:
-        search_listbox.original_widget = get_search_listbox()
-    fdetails.original_widget = urwid.ListBox([])
-
-def get_search_listbox():
-    data = get_search_list()
-    topnode = PiDropParentNode(data)
-    walker = PiDropWalker(topnode)
-    return urwid.AttrWrap(urwid.TreeListBox(walker),'body')
-
-def build_search_list():
-    global search_listbox
-    search_listbox =  get_search_listbox()
-    close_search = urwid.Button('close')
-    urwid.connect_signal(close_search, 'click', clear_search_list)
-    main_browser.original_widget = urwid.Pile([
-        ('pack',messages),
-        urwid.Padding(listbox, left=1, right=1),
-        ('pack',divider),
-        urwid.Padding(urwid.AttrWrap(urwid.LineBox(urwid.Columns([search_listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
-        ('pack',divider),
-        ('pack',urwid.Padding(search_section, left=2, right=2))
-    ],3)
-
-def clear_search_list(d):
-    global search_term
-    search_term = None
-    main_browser.original_widget = urwid.Pile([
-        ('pack',messages),
-        urwid.Padding(listbox, left=1, right=1),
-        ('pack',divider),
-        ('pack',urwid.Padding(search_section, left=2, right=2))
-    ])
-
-def get_pidrop_listbox():
-    global walker
-    data = get_pidrop_dir(cfga['rootdir'])[0]
-    topnode = PiDropParentNode(data)
-    walker = PiDropWalker(topnode)
-    #urwid.connect_signal(walker, 'modified', walking)
-    return  urwid.TreeListBox(walker)
-
-def get_importer_listbox():
-    data = get_dir(cfga['import-dir'])[0]
-    topnode = ImporterParentNode(data)
-    return  urwid.AttrWrap(urwid.TreeListBox(DirWalker(topnode)), 'importer')
-
-def get_exporter_listbox():
-    data = get_dir(cfga['export-dir'])[0]
-    topnode = ExporterParentNode(data)
-    return  urwid.AttrWrap(urwid.TreeListBox(DirWalker(topnode)), 'exporter')
-
-def more_details(w):
-    listbox.original_widget.body.focus.get_widget().more_path_details()
-
-def readable_bytes(b):
-    if b < (1024*1024):
-        out = '%0.1f KB' % (b/1024.0)
-    elif b < (1024*1024*1024):
-        out = '%0.1f MB' % (b/(1024*1024.0))
-    else:
-        out = '%0.1f GB' % (b/(1024*1024*1024.0))
-    return out
-
-def dir_stats(d):
-    fsize = 0
-    nfiles = 0
-    for (path, dirs, files) in os.walk(d):
-      for f in files:
-        nfiles += 1
-        fname = os.path.join(path, f)
-        fsize += os.path.getsize(fname)
-    return (readable_bytes(fsize), nfiles)
-
-def construct_importer_listbox():
-    global importer_listbox
-    global importer_container
-    # Importer folder browser elements
-    importer_listbox =  get_importer_listbox()
-    stats = dir_stats(cfga['import-dir'])
-    empty_importer_button = urwid.Button('Empty Import folder')
-    urwid.connect_signal(empty_importer_button, 'click', empty_importer)
-    footer = urwid.Padding(empty_importer_button, left=2, right=2)
-    footer = urwid.Pile([divider,footer,divider])
-    footer = urwid.AttrWrap(footer, 'footer')
-    importer_container = urwid.Frame(
-        urwid.AttrWrap(urwid.Padding(importer_listbox, left=2, right=2), 'importer'),
-        header=urwid.AttrWrap(urwid.Text('Importer folder'), 'header'),
-        footer =urwid.AttrWrap(footer, 'footer')
-    )
-
-def construct_exporter_listbox():
-    global exporter_listbox
-    global exporter_container
-    # Export folder browser elements
-    exporter_listbox =  get_exporter_listbox()
-    stats = dir_stats(cfga['export-dir'])
-    empty_exporter_button = urwid.Button('Empty Export folder')
-    urwid.connect_signal(empty_exporter_button, 'click', empty_exporter)
-    footer = urwid.Padding(empty_exporter_button, left=2, right=2)
-    footer = urwid.Pile([divider,footer,divider])
-    footer = urwid.AttrWrap(footer, 'footer')
-    exporter_container = urwid.Frame(
-        urwid.AttrWrap(urwid.Padding(exporter_listbox, left=2, right=2), 'exporter'),
-        header=urwid.AttrWrap(urwid.Text('Exporter folder'), 'header'),
-        footer =urwid.AttrWrap(footer, 'footer')
-    )
-
-def construct_properties_box():
-    global fdetails
-    global fdetails_container
-    fdetails = urwid.AttrWrap(urwid.ListBox([urwid.Text('file and folder details will appear here')]),'details')
-    plists = urwid.Pile([fdetails])
-    fdetails_container = urwid.Frame(
-        urwid.AttrWrap(urwid.Padding(plists, left=2, right=2),'details'),
-        header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header')
-    )
-
-def construct_browser_right_column():
-    global right_column
-    construct_importer_listbox()
-    construct_exporter_listbox()
-    construct_properties_box()
-    #c = urwid.Terminal(['sudo', 'tail', '-f', '/home/pi/PiDrop/pidrop.log'])
-    right_column = urwid.AttrWrap(
-        urwid.Padding(
-            urwid.Pile([
-                ('pack',divider),
-                urwid.LineBox(fdetails_container),
-                urwid.LineBox(importer_container),
-                urwid.LineBox(exporter_container)]
-            ),
-            right=1
-        ),
-        'body'
-    )
-
-def construct_browser_main_column():
-    global listbox
-    global search_box
-    global search_section
-    # Main directory browser
-    listbox =  urwid.AttrWrap(get_pidrop_listbox(), 'body')
-    # search input element
-    search_box = PiDropSearchInput('Search:')
-    urwid.connect_signal(search_box, 'change', set_search)
-    search_current_checkbox = urwid.CheckBox('current folder only', on_state_change=search_current_toggle)
-    search_regex_checkbox = urwid.CheckBox('regex', on_state_change=search_regex_toggle)
-    search_section = urwid.Columns([urwid.AttrWrap(search_box, 'search_box'),(24, search_current_checkbox),(10, search_regex_checkbox) ])
-
-def search_current_toggle(w, d):
-    global search_current_folder
-    if d:
-        search_current_folder = current_focus_folder
-    else:
-        search_current_folder = False
-
-def search_regex_toggle(w, d):
-    global search_regex
-    search_regex = d
-
-def construct_browser_mainview():
-    global keys
-    global mainview
-    global main_browser
-    global messages
-    global listbox_container
-    # notifications bar
-    keys = urwid.AttrWrap(urwid.Text(keys_default_text), 'footer')
-    footer = urwid.Pile([divider,keys,divider])
-    # primary elements
-    header = urwid.AttrWrap(urwid.Text('PiDrop - manage your dropbox'), 'header')
-
-    messages = urwid.AttrWrap(urwid.Text(''), 'body')
-
-    listbox_container = urwid.AttrWrap(urwid.Frame(listbox), 'body')
-
-    main_browser = urwid.AttrWrap(urwid.Pile([
-        ('pack',messages),
-        urwid.Padding(listbox_container, left=1, right=1),
-        ('pack',divider),
-        ('pack',urwid.Padding(search_section, left=2, right=2))
-    ]),'body')
-    cols = MainContainer([urwid.Columns([('weight', 3,main_browser), right_column])])
-    mainview.original_widget = urwid.Frame(
-        cols,
-        header=urwid.AttrWrap(header, 'head'),
-        footer=urwid.Padding(footer, left=2, right=2)
-    )
 
 def save_flist_to_json(dir_path, data):
     with open(dir_path+'/flist.json', 'w') as fp:
         json.dump(data, fp)
-
-def load_palette():
-    global palette
-    global palettes
-    global divider
-    divider = urwid.Divider(' ')
-
-    if 'palette' in cfga:
-        palette = palettes[cfga['palette']]
-    else: palette = palettes['light']
-
-def do_filebrowser(w):
-    global selected_files
-    global import_files
-    global new_dir_location
-    global search_term
-    global file_mode
-    global collapse_cache
-    global keys_default_text
-    global dbx
-    keys_default_text = '[B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp | [Q]uit'
-    selected_files = []
-    import_files = []
-    new_dir_location = None
-    file_mode = None
-    collapse_cache = {}
-    dbx = connect_dbx()
-    loading(mainview)
-    construct_browser_right_column()
-    construct_browser_main_column()
-    construct_browser_mainview()
 
 def loading(target):
     pile = urwid.Filler(MainContainer([('pack',divider),('pack',urwid.AttrWrap(urwid.Text('Loading...'),'loading')),('pack',divider)]), height=10)
     target.original_widget = urwid.AttrWrap(urwid.Frame(
         urwid.Padding(pile, left=5, right=5, width=10, align='center')
     ),'body')
-    loop.draw_screen()
-
-def do_config_menu(w):
-    global config_list
-    global cfgtitle
-    global errbox
-    global dbx
-    dbx = connect_dbx()
-    footer = urwid.AttrWrap(urwid.Text('[B]ack to main menu | [F]ile browser | [H]elp | [Q]uit'), 'footer')
-    footer = urwid.Pile([divider,footer,divider])
-    footer = urwid.Padding(footer, left=2, right=2)
-    errbox = urwid.AttrWrap(urwid.Text(''),'error')
-    cfgtitle = urwid.AttrWrap(urwid.Text('Select an option below'),'details')
-    opt_dirs = urwid.Button('Set the locations for your PiDrop directories')
-    urwid.connect_signal(opt_dirs,'click',do_config_menu_dirs)
-    opt_sync = urwid.Button('Select which Dropbox directories to sync')
-    urwid.connect_signal(opt_sync,'click',do_config_menu_sync)
-    opt_theme = urwid.Button('Select a theme')
-    urwid.connect_signal(opt_theme,'click',do_config_menu_theme)
-    opt_updown = urwid.Button('Upload/download settings')
-    urwid.connect_signal(opt_updown,'click',do_config_menu_updown)
-
-    back = urwid.Button('Back')
-    urwid.connect_signal(back,'click',do_welcome_screen)
-    config_list = urwid.AttrWrap(urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_updown),style_btn(opt_theme),divider,style_btn(back)]), 'body')
-    pile = MainContainer([('pack',divider),('pack',cfgtitle),('pack',divider), config_list])
-    mainview.original_widget = urwid.AttrWrap(urwid.Frame(
-        urwid.Padding(pile, left=5, right=5, width=120, align='center'),
-        header=urwid.AttrWrap(urwid.Text('PiDrop Config'), 'header'),
-        footer=footer
-    ),'body')
-
-
-def do_config_menu_updown(w):
-    global cfgb
-    cfgb = cfga
-    cfg_menu = []
-    if 'connection_tout' not in cfgb:
-        cfgb['connection_tout'] = 30
-    if 'large_upload_size' not in cfgb:
-        cfgb['large_upload_size'] = 100
-    if 'chunk_size' not in cfgb:
-        cfgb['chunk_size'] = 10
-    if 'daily_limit' not in cfgb:
-        cfgb['daily_limit'] = 0
-    connection_tout = urwid.IntEdit('Connection timeout:', cfgb['connection_tout'])
-    urwid.connect_signal(connection_tout,'change',change_temp_cfg, 'connection_tout')
-    conn_row = urwid.Columns([(26,connection_tout),(7,urwid.Text('seconds'))])
-    cfg_menu.append(conn_row)
-    cfg_menu.append(divider)
-    large_upl_n = urwid.IntEdit('Split uploads larger than [ ', cfgb['large_upload_size'])
-    urwid.connect_signal(large_upl_n,'change',change_temp_cfg, 'large_upload_size')
-    chunk = urwid.IntEdit('in to [ ', cfgb['chunk_size'])
-    urwid.connect_signal(chunk,'change',change_temp_cfg, 'chunk_size')
-    chunkn_row = urwid.Columns([(33,large_upl_n),(7,urwid.Text('MB ] ')), (11,chunk), (12,urwid.Text('MB ] chunks '))])
-    cfg_menu.append(chunkn_row)
-    cfg_menu.append(divider)
-    daily_limit = urwid.IntEdit('Daily upload/download limit: ', cfgb['daily_limit'])
-    urwid.connect_signal(daily_limit,'change',change_temp_cfg, 'daily_limit')
-    daily_row = urwid.Columns([(36,daily_limit), (19,urwid.Text('MB (0 = no limit) '))])
-    cfg_menu.append(daily_row)
-    cfg_menu.append(divider)
-    save = urwid.Button('Save and exit')
-    urwid.connect_signal(save,'click',config_save_updown)
-    back = urwid.Button('Exit without saving')
-    urwid.connect_signal(back,'click',do_config_menu)
-    cfg_menu.append(style_btn(save))
-    cfg_menu.append(style_btn(back))
-    config_list.original_widget = urwid.ListBox(cfg_menu)
-
-def config_save_updown(w):
-    update_config(cfgb)
-    do_config_menu(None)
-
-def do_config_menu_dirs(w):
-    global cfgb
-    cfgb = cfga
-    root_dir = urwid.Edit('PiDrop Root Directory: ', cfgb['rootdir'])
-    urwid.connect_signal(root_dir,'change',change_temp_cfg, 'rootdir')
-    import_dir = urwid.Edit('Imports Directory: ', cfgb['import-dir'])
-    urwid.connect_signal(import_dir,'change',change_temp_cfg, 'import-dir')
-    export_dir = urwid.Edit('Exports Directory: ', cfgb['export-dir'])
-    urwid.connect_signal(export_dir,'change',change_temp_cfg, 'export-dir')
-    save = urwid.Button('Save and exit')
-    urwid.connect_signal(save,'click',config_save_dirs)
-    back = urwid.Button('Exit without saving')
-    urwid.connect_signal(back,'click',do_config_menu)
-    cfg_menu = [root_dir,import_dir,export_dir,errbox]
-    cfg_menu.append(style_btn(save))
-    cfg_menu.append(style_btn(back))
-    config_list.original_widget = urwid.ListBox(cfg_menu)
+    LOOP.draw_screen()
 
 def style_btn(btn):
     return urwid.AttrWrap(btn,'button', 'button focus')
 
-def config_save_dirs(w):
-    if not os.path.isdir(cfgb['rootdir']):
-        errbox.set_text('\nRoot Directory is not a valid directory\n')
-    elif not os.path.isdir(cfgb['export-dir']):
-        errbox.set_text('\nExport Directory is not a valid directory\n')
-    elif not os.path.isdir(cfgb['import-dir']):
-        errbox.set_text('\nImport Directory is not a valid directory\n')
-    else:
-        update_config(cfgb)
-        do_config_menu(None)
-
-def change_temp_cfg(w, v, setting):
-    cfgb[setting] = v
-
-def do_config_menu_sync(w):
-    if 'all_remote_folders' in cfga:
-        outlist = []
-        if 'sync_depth' in cfga:
-            sd = cfga['sync_depth']
-        else: sd = 1
-        leveldown = urwid.Button(' - ')
-        level = urwid.Text(' Directory Depth: %d' % (sd))
-        levelup = urwid.Button(' + ')
-        level_ctrl = urwid.Columns([(7,urwid.AttrWrap(leveldown,'button')),(20,level),(7,urwid.AttrWrap(levelup,'button'))])
-        urwid.connect_signal(leveldown, 'click', change_sync_depth, sd-1)
-        urwid.connect_signal(levelup, 'click', change_sync_depth, sd+1)
-        remote_folders = cfga['all_remote_folders']['folders'] #list_remote_folders()
-        outlist.append(level_ctrl)
-        upd = urwid.Button('Update List')
-        urwid.connect_signal(upd,'click',update_folder_list)
-        update_row = urwid.Columns([(15, urwid.AttrWrap(upd, 'details')),urwid.Text('(Last updated %s)' % (cfga['all_remote_folders']['upd']))])
-        outlist.append(divider)
-        outlist.append(update_row)
-        outlist.append(divider)
-        for name in remote_folders:
-            name =name.strip(os.sep)
-            depth = name.count(os.sep)
-            if depth < sd:
-                display_txt = '%s %s' % ('  '*depth, name.split(os.sep)[-1])
-                if name in cfga['folders']:
-                    outlist.append(urwid.CheckBox(display_txt, state=True, user_data=name, on_state_change=set_sync))
-                else:
-                    outlist.append(urwid.CheckBox(display_txt, state=False, user_data=name, on_state_change=set_sync))
-        back = urwid.Button('Back')
-        outlist.append(divider)
-        outlist.append(errbox)
-        outlist.append(style_btn(back))
-        urwid.connect_signal(back,'click',do_config_menu)
-        config_list.original_widget = urwid.ListBox(outlist)
-    else:
-        msg = urwid.Text('You haven\'t yet retrieved your directory structure from Dropbox. Please click the button below. This may take a few minutes...')
-        btn = urwid.Button('Fetch list')
-        config_list.original_widget = urwid.ListBox([msg, divider, btn])
-        urwid.connect_signal(btn,'click',update_folder_list)
-
-def change_sync_depth(w,i):
-    if i < 1:
-        i = 1
-    if i > 5:
-        i = 5
-    for f in cfga['folders']:
-        if f.count('/') > i-1:
-            cfga['folders'].remove(f)
-    cfga['sync_depth'] = i
-    update_config(cfga)
-    do_config_menu_sync(None)
-
-def do_config_menu_theme(w):
-    outlist = []
-    opts = ['light','dark','system defaults']
-    if 'palette' in cfga:
-        p = cfga['palette']
-    else: p = 'light'
-    for name in opts:
-        if name == p:
-            outlist.append(urwid.CheckBox(name, state=True, user_data=name, on_state_change=set_theme))
-        else:
-            outlist.append(urwid.CheckBox(name, state=False, user_data=name, on_state_change=set_theme))
-    back = urwid.Button('Back')
-    outlist.append(divider)
-    outlist.append(style_btn(back))
-    urwid.connect_signal(back,'click',do_config_menu)
-    config_list.original_widget = urwid.ListBox(outlist)
-
-def set_theme(w, state, name):
-    cfga['palette'] = name
-    do_config_menu_theme(None)
-    update_config(cfga)
-    loop.screen.register_palette(palettes[name])
-    loop.screen.clear()
-
-def set_sync(w, state, name):
-    if name in cfga['folders']:
-        if not state:
-            cfga['folders'].remove(name)
-            update_config(cfga)
-    elif state:
-        cfga['folders'].append(name)
-        update_config(cfga)
-
-def update_folder_list(d):
-    folders = retrieve_folder_list()
-    cfga['all_remote_folders'] = {
-        'folders':folders,
-        'upd':str(datetime.datetime.now())
-    }
-    update_config(cfga)
-    do_config_menu_sync(None)
-
-def retrieve_folder_list(cursor=None):
-    if cursor is not None:
-        res = dbx.files_list_folder_continue(cursor)
-    else:
-        res = dbx.files_list_folder('', recursive=True)
-    folders = []
-    for entry in res.entries:
-        if isinstance(entry, dropbox.files.FolderMetadata):
-            folders.append(entry.path_lower)
-    if res.has_more:
-        folders.extend(retrieve_folder_list(res.cursor))
-    folders.sort()
-    return folders
-
-
-def do_help_menu(w):
-    footer = urwid.AttrWrap(urwid.Text('[B]ack to main menu | [F]ile browser | [C]onfig | [Q]uit'), 'footer')
-    footer = urwid.Pile([divider,footer,divider])
-    footer = urwid.Padding(footer, left=2, right=2)
-    data = help_questions
-    topnode = HelpParentNode(data)
-    helplist = urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
-    nfo = urwid.LineBox(urwid.Text("""
-        Welcome to the help menu.
-        -------------------------
-        Use your mouse or the arrow keys on your keyboard to navigate through though question/answer list below.
-
-        Throughout this UI you will find a list of available keys for the current screen in the footer."""))
-    pile = MainContainer([('pack',divider),('pack',nfo),('pack',divider), helplist])
-    mainview.original_widget = urwid.AttrWrap(urwid.Frame(
-        urwid.Padding(pile, left=2,right=2),
-        header=urwid.AttrWrap(urwid.Text('PiDrop Help Menu'), 'header'),
-        footer=footer
-    ),'body')
-
-def show_help_item(w,a):
-    help_item.set_text(a)
-
-def do_welcome_screen(w):
-    global mainview
-    welcome = urwid.AttrWrap(urwid.LineBox(urwid.Text('Select an option below by either clicking the option or pressing the associated key')),'details')
-    browser_btn = urwid.Button('[F]ile Browser/Manager')
-    urwid.connect_signal(browser_btn,'click',do_filebrowser)
-    config_btn  = urwid.Button('[C]onfigure PiDrop')
-    urwid.connect_signal(config_btn,'click',do_config_menu)
-    help_btn  = urwid.Button('[H]elp')
-    urwid.connect_signal(help_btn,'click',do_help_menu)
-    options = urwid.ListBox([style_btn(browser_btn),style_btn(config_btn),style_btn(help_btn)])
-    pile = urwid.Filler(MainContainer([('pack',divider),('pack',welcome),('pack',divider), options]), height=10)
-    mainview.original_widget = urwid.AttrWrap(urwid.Frame(
-        urwid.Padding(pile, left=5, right=5, width=70, align='center'),
-        header=urwid.AttrWrap(urwid.Text('Welcome'), 'header')
-    ),'body')
-
-def load_config():
-    global dir_path
-    global cfga
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    if not os.path.isfile(dir_path+'/cfg.json'):
-        update_config({"export-dir": "", "folders": [], "import-dir": "", "rootdir": "", "token": ""})
-    with open(dir_path+'/cfg.json') as json_file:
-            cfga = json.load(json_file)
+# def load_config():
+#     global dir_path
+#     global cfga
+#     dir_path = os.path.dirname(os.path.realpath(__file__))
+#     if not os.path.isfile(dir_path+'/cfg.json'):
+#         update_config({"export-dir": "", "folders": [], "import-dir": "", "rootdir": "", "token": ""})
+#     with open(dir_path+'/cfg.json') as json_file:
+#             cfga = json.load(json_file)
 
 def load_synced_file_list():
     global flist
@@ -1709,18 +1719,19 @@ def load_synced_file_list():
         with open(dir_path+'/flist.json') as json_file:
                 flist = json.load(json_file)
 
-def update_config(data):
-    with open(dir_path+'/cfg.json', 'w') as outfile:
-            json.dump(data, outfile)
-    load_config()
+# def update_config(data):
+#     with open(dir_path+'/cfg.json', 'w') as outfile:
+#             json.dump(data, outfile)
+#     load_config()
 
 def connect_dbx():
     global dbx
-    if 'connection_tout' in cfga:
-        tout = cfga['connection_tout']
+    if CONFIG.get('connection_tout'):
+        tout = CONFIG.get('connection_tout')
     else:
         tout = 30
-    dbx = dropbox.Dropbox(cfga['token'], timeout=int(tout))
+
+    dbx = dropbox.Dropbox(CONFIG.get('token'), timeout=int(tout))
     try:
         dbx.users_get_current_account()
     except:
@@ -1728,11 +1739,15 @@ def connect_dbx():
     return dbx
 
 def ui_init():
-    global loop
-    global mainview
-    mainview = urwid.AttrWrap(urwid.Text('Loading'), 'body')
-    load_config()
-    load_palette()
-    do_welcome_screen(None)
-    loop = urwid.MainLoop(mainview, palette, unhandled_input=unhandled_input)
-    loop.run()
+    global LOOP
+    global WINDOW
+    global CONFIG
+    global divider
+    global dir_path
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    divider = urwid.Divider(' ')
+    CONFIG = Cfg()
+    #load_config()
+    WINDOW = PiDropWindow()
+    LOOP = urwid.MainLoop(WINDOW.build(), WINDOW.palette, unhandled_input=unhandled_input)
+    LOOP.run()
