@@ -37,15 +37,14 @@ if sys.version.startswith('2'):
 import dropbox
 
 from pidrop_ui import *
+from helpers import *
 
 parser = argparse.ArgumentParser(description='Download/sync/manage folders from Dropbox')
 parser.add_argument('funct', nargs='?', default='main',
                     help='Which process should I run')
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-
 def main():
-    global cfga
+    global CONFIG
     global rootdir
     global path_list
     global flist
@@ -54,55 +53,51 @@ def main():
 
     args = parser.parse_args()
 
-    if not os.path.isfile(dir_path+'/cfg.json'):
-        PiDropd()
-        cfga = {'folders':[]}
-        format_outp('[ CONFIG FILE NOT FOUND ] Please use these commands to create one', 'fail')
+    CONFIG = Cfg()
+
+    if not CONFIG.get('token'):
         return setup()
 
     if args.funct == 'ui':
         return ui_init()
 
-    with open(dir_path+'/cfg.json') as json_file:
-        cfga = json.load(json_file)
-
-
     if args.funct == 'setup':
         return setup()
 
-    rootdir = cfga['rootdir'].rstrip('/')
+    rootdir = CONFIG.get('rootdir').rstrip('/')
 
     connect_dropbox()
 
     if args.funct == 'cfg':
         PiDropd()
         format_outp('Type "help" for a list of commands', 'blue')
-        return cfg(dbx, cfga)
+        return cfg(dbx, CONFIG.get())
 
     # we store a list of files that are synced, along with display paths
     flist = {}
 
-    open(dir_path+"/pidrop.log", 'w').close()
-    dblog('program started in '+dir_path)
+    open(CWD+"/pidrop.log", 'w').close()
+    dblog('program started in '+CWD)
 
-    for folder in cfga['folders']:
+    for folder in CONFIG.get('folders'):
         # scan_remote_folder(dbx, folder, flist)
         # upload_new(dbx, rootdir, folder, flist)
         syncbox(folder)
 
     # store our list of syced paths for use in the UI
-    save_flist_to_json(dir_path, flist)
+    SyncedFiles().set(flist)
 
     dblog('END')
     return
 
-
-
 def setup():
     global dbx
+    PiDropd()
+    format_outp('[ CONFIG FILE NOT FOUND ] Please use these commands to create one', 'fail')
+    CONFIG.set([], 'folders')
     token = input('Enter your Dropbox API token: ')
     if len(token.strip()):
-        cfga['token'] = token.strip()
+        CONFIG.set(token.strip(), 'token')
         format_outp('token set', 'success')
         format_outp('Attempting to connect...', 'blue')
         dbx = connect_dropbox()
@@ -110,16 +105,13 @@ def setup():
     else:
         format_outp('please enter a Dropbox API token!', 'fail')
         setup()
-    if 'rootdir' not in cfga:
+    if not CONFIG.get('rootdir'):
         setup_dirs()
 
-    with open(dir_path+'/cfg.json', 'w') as outfile:
-        json.dump(cfga, outfile)
-    f = open(dir_path+'/flist.json', 'w')
+    f = open(CWD+'/flist.json', 'w')
     f.write('{}')
     f.close()
     return ui_init()
-
 
 def setup_dirs():
     path = input('Enter the path to a local dir where you will store your files: ')
@@ -134,14 +126,13 @@ def setup_dirs():
             os.mkdir(fout)
         except OSError as e:
             return print('OS error', e)
-        cfga['rootdir'] = fpi
-        cfga['import-dir'] = fin
-        cfga['export-dir'] = fout
+        CONFIG.set(fpi, 'rootdir')
+        CONFIG.set(fin, 'import-dir')
+        CONFIG.set(fout, 'export-dir')
         format_outp('path set', 'success')
     else:
         format_outp('please enter a valid dir!', 'fail')
         setup_dirs()
-
 
 def cfg(dbx, cfga, var=None):
     if not var:
@@ -164,7 +155,7 @@ def cfg(dbx, cfga, var=None):
         print('------------------')
         cfg(dbx, cfga)
     elif var == 'exit':
-        with open(dir_path+'/cfg.json') as json_file:
+        with open(CWD+'/cfg.json') as json_file:
             cfgb = json.load(json_file)
         if cfga != cfgb:
             conf = input('exit without saving? (y/n): ')
@@ -174,11 +165,11 @@ def cfg(dbx, cfga, var=None):
                 cfg(dbx, cfga)
         return
     elif var == 'save':
-        with open(dir_path+'/cfg.json', 'w') as outfile:
+        with open(CWD+'/cfg.json', 'w') as outfile:
             json.dump(cfga, outfile)
         cfg(dbx, cfga)
     elif var == 'dump':
-        with open(dir_path+'/cfg.json', 'r') as handle:
+        with open(CWD+'/cfg.json', 'r') as handle:
             parsed = json.load(handle)
         print( json.dumps(parsed, indent=4, sort_keys=True))
         cfg(dbx, cfga)
@@ -258,26 +249,12 @@ def cfg(dbx, cfga, var=None):
         format_outp('unrecognised command', 'fail')
         cfg(dbx, cfga)
 
-def format_outp(msg, case='hl'):
-    fmt = '0';
-    if case == 'hl':
-        fmt = '93'
-    elif case == 'blue':
-        fmt = '96'
-    elif case == 'success':
-        fmt = '32;1'
-    elif case == 'fail':
-        fmt = '31;1'
-    os.system('echo "\e[%sm%s \e[0m\r"' % (fmt, str(msg)))
-
-
 def dblog(msg):
-    f= open(dir_path+"/pidrop.log","a")
+    f= open(CWD+"/pidrop.log","a")
     pmsg = '[ %s ] : %s \r\n' % (str(datetime.datetime.now()), msg.encode('utf-8'))
     f.write(pmsg)
     f.close()
     print(msg)
-
 
 def syncbox(folder):
     """
@@ -302,7 +279,6 @@ def syncbox(folder):
             dblog(name+': is in the DELETE list')
             sync_deleted(listing[name])
     sync_local(folder)
-
 
 def is_file_synced(data):
     """
@@ -383,8 +359,6 @@ def sync_deleted(data):
             return
         dblog('REMOVED FILE: '+local_path)
 
-
-
 def sync_folder(data):
     """
     Create a new directory and any parent dirs found at Dropbox
@@ -432,7 +406,6 @@ def download_file(data):
     if remaining_bwidth != 'unlimited' and data.size > remaining_bwidth:
         dblog('SKIPPING DOWNLOAD - Downloading now would exceed the daily bandwidth limit')
         return None
-
 
     local_path = '/'.join([rootdir, data.path_lower.strip('/')])
 
@@ -511,8 +484,8 @@ def sync_local(folder):
     Find any files that aren't on Dropbox and upload them
     Should only run directly after downloading files have finished syncing ie. syncbox()
     """
-    if 'large_upload_size' in cfga:
-        large_upload_size = cfga['large_upload_size']
+    if CONFIG.get('large_upload_size'):
+        large_upload_size = CONFIG.get('large_upload_size')
     else:
         large_upload_size = 10
     for dn, dirs, files in os.walk(rootdir+'/'+folder):
@@ -557,7 +530,7 @@ def sync_local(folder):
         dirs[:] = keep
 
 def create_remote_folder(path):
-    remote_path = path[len(cfga['rootdir'])-1:]
+    remote_path = path[len(CONFIG.get('root_dir'))-1:]
     dblog(remote_path)
     try:
         res = dbx.files_create_folder_v2(
@@ -609,13 +582,10 @@ def upload(path, overwrite=False):
     dblog('uploaded as '+ res.name.encode('utf8'))
     return res
 
-
 def upload_large(path, overwrite=False):
 
-
-
-    if 'chunk_size' in cfga:
-        chunk = cfga['chunk_size']
+    if CONFIG.get('chunk_size'):
+        chunk = CONFIG.get('chunk_size')
     else:
         chunk = 10
 
@@ -679,55 +649,45 @@ def upload_large(path, overwrite=False):
         return None
     flist[new_path] = {'name':fname}
 
-
 def register_bandwidth_usage(n):
     today = datetime.datetime.now()
     today = today.strftime("%Y-%m-%d")
-    if 'daily_usage' not in cfga or today != cfga['daily_usage']['date']:
-        dblog('Days don\'t match. Resetting')
-        cfga['daily_usage'] = {
-            'date':today,
-            'usage':n
-        }
+    du = CONFIG.get('daily_usage')
+    if not du or today != du['date']:
+        dblog('Days don\'t match. Resetting daily usage count')
     else:
-        cfga['daily_usage']['usage'] = int(cfga['daily_usage']['usage'])+n
-    update_cfg(cfga)
+        n += int(du['usage'])
+    CONFIG.set({
+        'date':today,
+        'usage':n
+    }, 'daily_usage')
 
 def get_remaining_daily_bandwidth():
-    if 'daily_limit' not in cfga:
+    if not CONFIG.get('daily_limit'):
         return 'unlimited'
-    dl = int(cfga['daily_limit']) * 1024 * 1024
-    if 'daily_usage' not in cfga:
+    dl = int(CONFIG.get('daily_limit')) * 1024 * 1024
+    if not CONFIG.get('daily_usage'):
         return dl
 
     else:
         today = datetime.datetime.now()
         today = today.strftime("%Y-%m-%d")
-        if today != cfga['daily_usage']['date']:
-            cfga['daily_usage'] = {
+        if today != CONFIG.get('daily_usage')['date']:
+            CONFIG.set({
                 'date':today,
                 'usage':0
-            }
-            update_cfg(cfga)
+            }, 'daily_usage')
             return dl
         else:
-            return dl - int(cfga['daily_usage']['usage'])
-
-def update_cfg(data):
-    global cfga
-    with open(dir_path+'/cfg.json', 'w') as outfile:
-            json.dump(data, outfile)
-    load_config()
-    cfga = data
-
+            return dl - int(CONFIG.get('daily_usage')['usage'])
 
 def connect_dropbox():
     global dbx
-    if 'connection_tout' in cfga:
-        tout = cfga['connection_tout']
+    if CONFIG.get('connection_tout'):
+        tout = CONFIG.get('connection_tout')
     else:
         tout = 30
-    dbx = dropbox.Dropbox(cfga['token'], timeout=int(tout))
+    dbx = dropbox.Dropbox(CONFIG.get('token'), timeout=int(tout))
     try:
         dbx.users_get_current_account()
     except:

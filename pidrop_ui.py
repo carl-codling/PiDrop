@@ -36,6 +36,8 @@ from themes import *
 from helpers import *
 from pidrop_help import *
 
+CWD = os.path.dirname(os.path.realpath(__file__))
+
 class PiDropSearchInput(urwid.Edit):
 
     def keypress(self, size, key):
@@ -63,7 +65,7 @@ class PiDropDirInput(urwid.Edit):
                 remote_path = self.target_dir[len(CONFIG.get('rootdir'))-1:]+os.sep+dirname
                 NOTIFIER.set(remote_path, 'success')
                 try:
-                    res = dbx.files_create_folder_v2(
+                    res = DBX.files_create_folder_v2(
                         remote_path,
                         autorename=True)
                 except dropbox.exceptions.ApiError as err:
@@ -73,12 +75,11 @@ class PiDropDirInput(urwid.Edit):
                 os.mkdir(new_local_loc)
                 NOTIFIER.set('New directory %s created at %s' % (dirname,self.target_dir), 'success')
                 KEYPROMPT.set()
-                flist[new_local_loc] = {'name':dirname}
-                save_flist_to_json(dir_path, flist)
-                if os.path.isdir(current_focus_browser_widget.full_path):
-                    targ = current_focus_browser_widget.get_node()
+                SYNCED_FILES.set({'name':dirname}, new_local_loc)
+                if os.path.isdir(BROWSER.focus_widget.full_path):
+                    targ = BROWSER.focus_widget.get_node()
                 else:
-                    targ = current_focus_browser_widget.get_node().get_parent()
+                    targ = BROWSER.focus_widget.get_node().get_parent()
                 if 'children' in targ._value:
                     targ._value['children'].append({'name':dirname, 'path':self.target_dir, 'sync':'sync'})
                 else:
@@ -99,7 +100,7 @@ class PiDropDirInput(urwid.Edit):
         current_name = self.target_dir.split(os.sep)[-1]
         new_path = self.target_dir[:-len(current_name)] + new_name
         try:
-            res = dbx.files_move_v2(
+            res = DBX.files_move_v2(
                 self.target_dir[rootlen:], new_path[rootlen:],
                 autorename=True)
         except dropbox.exceptions.ApiError as err:
@@ -115,12 +116,11 @@ class PiDropDirInput(urwid.Edit):
         NOTIFIER.set('%s > renamed to > %s' % (self.target_dir[rootlen:],new_local_path[rootlen:]),'success')
         KEYPROMPT.set()
         new_fname = res.metadata.path_display.split(os.sep)[-1]
-        flist[new_local_path] = {'name':new_fname}
-        save_flist_to_json(dir_path, flist)
-        current_focus_browser_widget.get_node()._value['name'] = new_fname
+        SYNCED_FILES.set({'name':new_fname}, new_local_path)
+        BROWSER.focus_widget.get_node()._value['name'] = new_fname
         namelen = len(new_fname)+1
-        current_focus_browser_widget.get_node()._value['path'] = new_local_path[:-namelen]
-        current_focus_browser_widget.__init__(current_focus_browser_widget.get_node())
+        BROWSER.focus_widget.get_node()._value['path'] = new_local_path[:-namelen]
+        BROWSER.focus_widget.__init__(BROWSER.focus_widget.get_node())
 
 class PiDropTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
@@ -140,8 +140,8 @@ class PiDropTreeWidget(urwid.TreeWidget):
         self.set_style()
 
         if os.path.isdir(self.full_path) and 'children' in node.get_value():
-            if self.full_path in collapse_cache:
-                self.expanded = collapse_cache[self.full_path]
+            if self.full_path in BROWSER.collapsed:
+                self.expanded = BROWSER.collapsed[self.full_path]
             elif node.get_depth() > 0:
                 self.expanded = False
             self.update_expanded_icon()
@@ -169,8 +169,8 @@ class PiDropTreeWidget(urwid.TreeWidget):
         else:
             shared = urwid.Text('')
         # if our path exists in flist then get the display name
-        if self.full_path in flist:
-            fname = flist[self.full_path]['name']
+        if SYNCED_FILES.get(self.full_path):
+            fname = SYNCED_FILES.get(self.full_path)['name']
         else:
             fname = self.name
         # if we're at the root node simply set a textual name
@@ -210,14 +210,7 @@ class PiDropTreeWidget(urwid.TreeWidget):
 
     def update_expanded_icon(self):
         self.__super.update_expanded_icon()
-        collapse_cache[self.full_path] = self.expanded
-
-    def register_current_focus_folder(self):
-        global current_focus_folder
-        if os.path.isdir(self.full_path):
-            current_focus_folder = self.full_path
-        else:
-            current_focus_folder = self.path
+        BROWSER.collapsed[self.full_path] = self.expanded
 
     def path_details(self):
         if self.path == '[[SEARCH]]':
@@ -256,8 +249,9 @@ class PiDropTreeWidget(urwid.TreeWidget):
             typstr = 'File type: %s' % (typ[len(self.full_path)+2:])
             typstr = typstr.strip()
             self.path_properties_data.append(urwid.Text(typstr))
-            if self.full_path in flist and 'media_info' in flist[self.full_path]:
-                for k,v in  flist[self.full_path]['media_info'].items():
+            synced_file = SYNCED_FILES.get(self.full_path)
+            if synced_file and 'media_info' in synced_file:
+                for k,v in  synced_file['media_info'].items():
                     if k == 'Duration: ':
                         v = str(datetime.timedelta(milliseconds=int(v))).split('.')[0]
                     self.path_properties_data.append(urwid.Text(k+v))
@@ -571,16 +565,16 @@ class DirWalker(urwid.TreeWalker):
         self.focus.get_widget().path_details()
 
 class PiDropWalker(urwid.TreeWalker):
+
     def __init__(self, start_from):
         self.focus = start_from
         urwid.connect_signal(self, 'modified', self.walking)
+
     def walking(self):
-        global current_focus_browser_widget
-        global current_focus_path
-        current_focus_browser_widget = self.focus.get_widget()
-        current_focus_path = self.focus.get_value()['path']+os.sep+self.focus.get_value()['name']
+        BROWSER.focus_widget = self.focus.get_widget()
+        BROWSER.current_focus_path = self.focus.get_widget().full_path
         self.focus.get_widget().path_details()
-        self.focus.get_widget().register_current_focus_folder()
+
     def reset_all_nodes_style(self):
         nodes = self.__iter__()
         for p in nodes:
@@ -588,16 +582,16 @@ class PiDropWalker(urwid.TreeWalker):
 
     def reset_focus(self):
         nodes = self.__iter__()
-        if 'current_focus_path' not in globals():
+        if not BROWSER.current_focus_path:
             return
         for p in nodes:
-            if p.get_value()['path']+os.sep+p.get_value()['name'] == current_focus_path:
+            if p.get_value()['path']+os.sep+p.get_value()['name'] == BROWSER.current_focus_path:
                 self.set_focus(p)
                 return
         # if we can't find the specific node we try the parent
         nodes = self.__iter__()
         for p in nodes:
-            if p.get_value()['path']+os.sep+p.get_value()['name'] == os.path.abspath(os.path.join(current_focus_path, os.pardir)):
+            if p.get_value()['path']+os.sep+p.get_value()['name'] == os.path.abspath(os.path.join(BROWSER.current_focus_path, os.pardir)):
                 self.set_focus(p)
                 return
 
@@ -754,6 +748,7 @@ class PiDropTreeList(urwid.TreeListBox):
             NOTIFIER.set('No files selected!', 'error')
 
     def move_files(self):
+        loading(BROWSER.listbox_container)
         w = self.body.focus.get_widget()
         rootlen = len(CONFIG.get('rootdir'))-1
         if os.path.isdir(w.full_path):
@@ -763,13 +758,14 @@ class PiDropTreeList(urwid.TreeListBox):
         i=0
         for f in self.selected:
             newp = p+os.sep+f.split(os.sep)[-1]
-            if f in flist:
-                newp_remote = p+os.sep+flist[f]['name']
+            synced_file = SYNCED_FILES.get(f)
+            if synced_file:
+                newp_remote = p+os.sep+synced_file['name']
                 newp_remote = newp_remote[rootlen:]
             else:
                 newp_remote = newp[rootlen:]
             try:
-                res = dbx.files_move_v2(
+                res = DBX.files_move_v2(
                     f[rootlen:], newp_remote,
                     autorename=True)
             except dropbox.exceptions.ApiError as err:
@@ -777,12 +773,11 @@ class PiDropTreeList(urwid.TreeListBox):
                 return None
             new_local_path = os.sep + CONFIG.get('rootdir').strip(os.sep) + res.metadata.path_lower
             os.rename(f, new_local_path)
-            if f in flist:
-                flist[new_local_path] = {'name':res.metadata.path_display.split(os.sep)[-1]}
-                del flist[f]
+            if synced_file:
+                SYNCED_FILES.set({'name':res.metadata.path_display.split(os.sep)[-1]},new_local_path)
+                SYNCED_FILES.unset(f)
             i+=1
 
-        save_flist_to_json(dir_path, flist)
         self.reload_walker()
         NOTIFIER.set('%d Selected files/folders were moved.' % (i), 'success')
         KEYPROMPT.set()
@@ -802,7 +797,7 @@ class PiDropTreeList(urwid.TreeListBox):
         out = ''
         for f in self.selected:
             try:
-                dbx.files_delete_v2(os.sep+f[rootlen:])
+                DBX.files_delete_v2(os.sep+f[rootlen:])
             except dropbox.exceptions.ApiError as err:
                     out += '*** API error: %s\n' % (str(err))
             if os.path.isdir(f):
@@ -888,6 +883,7 @@ class PiDropTreeList(urwid.TreeListBox):
 
     def reload_walker(self):
         loading(BROWSER.listbox_container)
+        SYNCED_FILES.__init__()
         data = BROWSER.fetch_dir_data()[0]
         topnode = PiDropParentNode(data)
         self.body = PiDropWalker(topnode)
@@ -954,7 +950,7 @@ class ImporterTreeList(urwid.TreeListBox):
 
     def reload_walker(self):
         loading(IMPORTER.listbox_container)
-        data = get_pidrop_dir(CONFIG.get('import-dir'))[0]
+        data = IMPORTER.get_dir()[0]
         topnode = ImporterParentNode(data)
         self.body = DirWalker(topnode)
         IMPORTER.listbox_container.original_widget = IMPORTER.listbox
@@ -963,91 +959,107 @@ class ExporterTreeList(urwid.TreeListBox):
 
     def reload_walker(self):
         loading(EXPORTER.listbox_container)
-        data = get_pidrop_dir(CONFIG.get('export-dir'))[0]
+        data = EXPORTER.get_dir()[0]
         topnode = ExporterParentNode(data)
         self.body = DirWalker(topnode)
         EXPORTER.listbox_container.original_widget = EXPORTER.listbox
 
-class ImporterWidget(object):
+class DirWidget(object):
 
-    def __init__(self):
+    def __init__(self, dir, style, title):
+        self.dir = dir
+        self.style = style
+        self.title = title
         self.listbox = self.set_listbox()
-        self.btn = self.set_btn()
+        self.btns = self.set_btns()
 
     def set_listbox(self):
-        data = get_dir(CONFIG.get('import-dir'))[0]
+        data = self.get_dir()[0]
+        topnode = urwid.ParentNode(data)
+        return urwid.TreeListBox(urwid.TreeWalker(topnode))
+
+    def set_btns(self):
+        empty = urwid.Button('Empty '+self.title)
+        urwid.connect_signal(empty, 'click', self.empty)
+        reload = urwid.Button('Reload')
+        urwid.connect_signal(reload, 'click', self.reload)
+        return urwid.Columns([empty,reload])
+
+    def build(self):
+        footer = urwid.Padding(self.btns, left=2, right=2)
+        footer = urwid.Pile([urwid.Divider(' '),footer,urwid.Divider(' ')])
+        footer = urwid.AttrWrap(footer, 'footer')
+        self.listbox_container = urwid.AttrWrap(urwid.Padding(self.listbox, left=2, right=2), self.style)
+        return urwid.Frame(
+            self.listbox_container,
+            header=urwid.AttrWrap(urwid.Text(self.title), 'header'),
+            footer =urwid.AttrWrap(footer, 'footer')
+        )
+
+    def reload(self,d):
+        self.listbox.reload_walker()
+
+    def get_dir(self):
+        """
+        Creates a nested dictionary that represents the folder structure of a dir
+        """
+        out = {}
+        rootdir = self.dir.rstrip(os.sep)
+        start = rootdir.rfind(os.sep) + 1
+        for path, dirs, files in os.walk(rootdir):
+            folders = path[start:].split(os.sep)
+            subdir = dict.fromkeys(files)
+            parent = reduce(dict.get, folders[:-1], out)
+            parent[folders[-1]] = subdir
+        return self.format_dir(out, rootdir[:-len(rootdir)+start-1])
+
+    def format_dir(self, dir, path, overide_sync_check=False):
+        out=[]
+        rpath = ''
+        for k,v in dir.items():
+            osc = overide_sync_check
+            fpath = path+os.sep+k
+            children = []
+            if(v):
+                children=self.format_dir(v,fpath,osc)
+            o = {'name':k, 'path':path}
+            if len(children) > 0:
+                o['children']  = children
+            out.append(o)
+        return out
+
+    def empty(self,d):
+        for the_file in os.listdir(self.dir):
+            file_path = os.path.join(self.dir, the_file)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path): shutil.rmtree(file_path)
+            except Exception as e:
+                NOTIFIER.set(str(e), 'error')
+        self.listbox.reload_walker()
+
+class ImporterWidget(DirWidget):
+
+    def set_listbox(self):
+        data = self.get_dir()[0]
         topnode = ImporterParentNode(data)
         return ImporterTreeList(DirWalker(topnode))
 
-    def set_btn(self):
-        btn = urwid.Button('Empty Import folder')
-        urwid.connect_signal(btn, 'click', self.empty)
-        return btn
-
-    def build(self):
-        footer = urwid.Padding(self.btn, left=2, right=2)
-        footer = urwid.Pile([divider,footer,divider])
-        footer = urwid.AttrWrap(footer, 'footer')
-        self.listbox_container = urwid.AttrWrap(urwid.Padding(self.listbox, left=2, right=2), 'importer')
-        return urwid.Frame(
-            self.listbox_container,
-            header=urwid.AttrWrap(urwid.Text('Importer folder'), 'header'),
-            footer =urwid.AttrWrap(footer, 'footer')
-        )
-
-    def empty(self,d):
-        for the_file in os.listdir(CONFIG.get('import-dir')):
-            file_path = os.path.join(CONFIG.get('import-dir'), the_file)
-            try:
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path): shutil.rmtree(file_path)
-            except Exception as e:
-                NOTIFIER.set(str(e), 'error')
-        self.listbox.reload_walker()
-
-class ExporterWidget(object):
-
-    def __init__(self):
-        self.listbox = self.set_listbox()
-        self.btn = self.set_btn()
+class ExporterWidget(DirWidget):
 
     def set_listbox(self):
-        data = get_dir(CONFIG.get('export-dir'))[0]
+        data = self.get_dir()[0]
         topnode = ExporterParentNode(data)
         return ExporterTreeList(DirWalker(topnode))
 
-    def set_btn(self):
-        btn = urwid.Button('Empty Export folder')
-        urwid.connect_signal(btn, 'click', self.empty)
-        return btn
-
-    def build(self):
-        footer = urwid.Padding(self.btn, left=2, right=2)
-        footer = urwid.Pile([divider,footer,divider])
-        footer = urwid.AttrWrap(footer, 'footer')
-        self.listbox_container = urwid.AttrWrap(urwid.Padding(self.listbox, left=2, right=2), 'exporter')
-        return urwid.Frame(
-            self.listbox_container,
-            header=urwid.AttrWrap(urwid.Text('Exporter folder'), 'header'),
-            footer =urwid.AttrWrap(footer, 'footer')
-        )
-
-    def empty(self,d):
-        for the_file in os.listdir(CONFIG.get('export-dir')):
-            file_path = os.path.join(CONFIG.get('export-dir'), the_file)
-            try:
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path): shutil.rmtree(file_path)
-            except Exception as e:
-                NOTIFIER.set(str(e), 'error')
-        self.listbox.reload_walker()
-
 class FileBrowserWidget(object):
 
+    current_focus_path = None
+    focus_widget = None
+    collapsed = {} # Dict of expanded/collapsed parent nodes. Use to reset state on refresh
+
     def __init__(self):
-        load_synced_file_list()
         self.listbox = self.set_listbox()
 
     def build(self):
@@ -1081,7 +1093,7 @@ class FileBrowserWidget(object):
             if overide_sync_check:
                 sync = 'override'
             elif os.path.isdir(path+os.sep+k):
-                if fpath not in flist and not fnmatch.filter(flist, fpath+os.sep+'*'):
+                if not SYNCED_FILES.get(fpath) and not fnmatch.filter(SYNCED_FILES.files, fpath+os.sep+'*'):
                     # No dirs or subdirs are being synced
                     # Override any checks in sub dirs
                     sync = 'nosync'
@@ -1090,7 +1102,7 @@ class FileBrowserWidget(object):
                     sync = 'unsync'
                 else:
                     sync = 'sync'
-            elif os.path.isfile(fpath) and fpath in flist:
+            elif os.path.isfile(fpath) and SYNCED_FILES.get(fpath):
                 sync = 'sync'
             else:
                 if self.path_has_synced_parent(fpath):
@@ -1111,10 +1123,11 @@ class FileBrowserWidget(object):
         return out
 
     def is_shared(self, path):
-        if path not in flist:
+        synced_path = SYNCED_FILES.get(path)
+        if not synced_path:
             return False
-        elif 'shared' in flist[path]:
-            return flist[path]['shared']
+        elif 'shared' in synced_path:
+            return synced_path['shared']
         return False
 
     def path_has_synced_parent(self, p):
@@ -1133,11 +1146,11 @@ class FileBrowserWidget(object):
         for path, dirs, files in os.walk(p):
             for f in files:
                 fullname = os.path.join(path, f)
-                if fullname not in flist:
+                if not SYNCED_FILES.get(fullname):
                     return True
             for d in dirs:
                 fullname = os.path.join(path, d)
-                if fullname not in flist:
+                if not SYNCED_FILES.get(fullname):
                     return True
         return False
 
@@ -1184,7 +1197,10 @@ class SearchBarWidget(object):
 
     def ftoggle(self, w, d):
         if d:
-            self.in_folder = current_focus_folder
+            if os.path.isdir(BROWSER.listbox.focus.full_path):
+                self.in_folder = BROWSER.listbox.focus.full_path
+            else:
+                self.in_folder = BROWSER.listbox.focus.path
         else:
             self.in_folder = False
 
@@ -1193,8 +1209,8 @@ class SearchBarWidget(object):
 
     def build_search_list(self):
         global SEARCHLIST
+        loading(WINDOW.left)
         SEARCHLIST = SearchListWidget()
-
         WINDOW.left.original_widget = SEARCHLIST.build()
 
 class SearchListWidget(object):
@@ -1212,20 +1228,20 @@ class SearchListWidget(object):
         close_search = urwid.Button('close')
         urwid.connect_signal(close_search, 'click', self.clear_search_list)
         return urwid.Pile([
-            ('pack',messages),
+            ('pack',NOTIFIER.message),
             urwid.Padding(BROWSER.listbox, left=1, right=1),
-            ('pack',divider),
+            ('pack',urwid.Divider(' ')),
             urwid.Padding(urwid.AttrWrap(urwid.LineBox(urwid.Columns([self.listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
-            ('pack',divider),
+            ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.bar, left=2, right=2))
         ],3)
 
     def clear_search_list(self,d):
         SEARCHBAR.search_term = None
         WINDOW.left.original_widget = urwid.Pile([
-            ('pack',messages),
+            ('pack',NOTIFIER.message),
             urwid.Padding(BROWSER.listbox, left=1, right=1),
-            ('pack',divider),
+            ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.bar, left=2, right=2))
         ])
 
@@ -1303,7 +1319,7 @@ class ConfigWidget(object):
 
     def build(self):
 
-        return urwid.Padding(MainContainer([('pack',divider),('pack',urwid.AttrWrap(self.title,'details')),('pack',divider), self.menu]), left=5, right=5, width=120, align='center')
+        return urwid.Padding(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrWrap(self.title,'details')),('pack',urwid.Divider(' ')), self.menu]), left=5, right=5, width=120, align='center')
 
     def screen(self, d, screen):
         if screen == 'home':
@@ -1332,19 +1348,19 @@ class ConfigWidget(object):
         urwid.connect_signal(connection_tout,'change',self.change_temp_cfg, 'connection_tout')
         conn_row = urwid.Columns([(26,connection_tout),(7,urwid.Text('seconds'))])
         cfg_menu.append(conn_row)
-        cfg_menu.append(divider)
+        cfg_menu.append(urwid.Divider(' '))
         large_upl_n = urwid.IntEdit('Split uploads larger than [ ', self.cfg['large_upload_size'])
         urwid.connect_signal(large_upl_n,'change',self.change_temp_cfg, 'large_upload_size')
         chunk = urwid.IntEdit('in to [ ', self.cfg['chunk_size'])
         urwid.connect_signal(chunk,'change',self.change_temp_cfg, 'chunk_size')
         chunkn_row = urwid.Columns([(33,large_upl_n),(7,urwid.Text('MB ] ')), (11,chunk), (12,urwid.Text('MB ] chunks '))])
         cfg_menu.append(chunkn_row)
-        cfg_menu.append(divider)
+        cfg_menu.append(urwid.Divider(' '))
         daily_limit = urwid.IntEdit('Daily upload/download limit: ', self.cfg['daily_limit'])
         urwid.connect_signal(daily_limit,'change',self.change_temp_cfg, 'daily_limit')
         daily_row = urwid.Columns([(36,daily_limit), (19,urwid.Text('MB (0 = no limit) '))])
         cfg_menu.append(daily_row)
-        cfg_menu.append(divider)
+        cfg_menu.append(urwid.Divider(' '))
         save = urwid.Button('Save and exit')
         urwid.connect_signal(save,'click',self.save_updown)
         back = urwid.Button('Exit without saving')
@@ -1359,7 +1375,7 @@ class ConfigWidget(object):
 
     def theme(self):
         outlist = []
-        opts = ['light','dark','system defaults']
+        opts = palettes.keys()
         if CONFIG.get('palette'):
             p = CONFIG.get('palette')
         else: p = 'light'
@@ -1369,7 +1385,7 @@ class ConfigWidget(object):
             else:
                 outlist.append(urwid.CheckBox(name, state=False, user_data=name, on_state_change=self.set_theme))
         back = urwid.Button('Back')
-        outlist.append(divider)
+        outlist.append(urwid.Divider(' '))
         outlist.append(style_btn(back))
         urwid.connect_signal(back,'click',self.screen, 'home')
         return urwid.ListBox(outlist)
@@ -1393,7 +1409,7 @@ class ConfigWidget(object):
 
         back = urwid.Button('Back')
         urwid.connect_signal(back,'click', WINDOW.screen, 'welcome')
-        return urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_updown),style_btn(opt_theme),divider,style_btn(back)])
+        return urwid.ListBox([style_btn(opt_dirs),style_btn(opt_sync),style_btn(opt_updown),style_btn(opt_theme),urwid.Divider(' '),style_btn(back)])
 
     def sync(self):
         if CONFIG.get('all_remote_folders'):
@@ -1412,9 +1428,9 @@ class ConfigWidget(object):
             upd = urwid.Button('Update List')
             urwid.connect_signal(upd,'click',self.update_folder_list)
             update_row = urwid.Columns([(15, urwid.AttrWrap(upd, 'details')),urwid.Text('(Last updated %s)' % (CONFIG.get('all_remote_folders')['upd']))])
-            outlist.append(divider)
+            outlist.append(urwid.Divider(' '))
             outlist.append(update_row)
-            outlist.append(divider)
+            outlist.append(urwid.Divider(' '))
             for name in remote_folders:
                 name =name.strip(os.sep)
                 depth = name.count(os.sep)
@@ -1425,7 +1441,7 @@ class ConfigWidget(object):
                     else:
                         outlist.append(urwid.CheckBox(display_txt, state=False, user_data=name, on_state_change=self.set_sync))
             back = urwid.Button('Back')
-            outlist.append(divider)
+            outlist.append(urwid.Divider(' '))
             outlist.append(self.errbox)
             outlist.append(style_btn(back))
             urwid.connect_signal(back,'click',self.screen, 'home')
@@ -1434,7 +1450,7 @@ class ConfigWidget(object):
             msg = urwid.Text('You haven\'t yet retrieved your directory structure from Dropbox. Please click the button below. This may take a few minutes...')
             btn = urwid.Button('Fetch list')
             urwid.connect_signal(btn,'click',self.update_folder_list)
-            return urwid.ListBox([msg, divider, btn])
+            return urwid.ListBox([msg, urwid.Divider(' '), btn])
 
     def update_folder_list(self, d):
         folders = self.retrieve_folder_list()
@@ -1446,9 +1462,9 @@ class ConfigWidget(object):
 
     def retrieve_folder_list(self, cursor=None):
         if cursor is not None:
-            res = dbx.files_list_folder_continue(cursor)
+            res = DBX.files_list_folder_continue(cursor)
         else:
-            res = dbx.files_list_folder('', recursive=True)
+            res = DBX.files_list_folder('', recursive=True)
         folders = []
         for entry in res.entries:
             if isinstance(entry, dropbox.files.FolderMetadata):
@@ -1515,21 +1531,27 @@ class ConfigWidget(object):
 class PiDropWindow(object):
 
     screens = {}
+    prompts = {
+        'welcome':' ',
+        'browser':False,
+        'help':'[B]ack to main menu | [F]ile browser | [C]onfig | [Q]uit',
+        'config':'[B]ack to main menu | [F]ile browser | [H]elp | [Q]uit'
+    }
 
     def __init__(self):
-        global collapse_cache
-        global dbx
+        global DBX
         global KEYPROMPT
         KEYPROMPT = KeyPromptWidget()
-        collapse_cache = {}
-        dbx = connect_dbx()
+        DBX = connect_dbx()
         self.palette = self.set_palette()
         self.main = urwid.AttrWrap(urwid.ListBox([]), 'body')
         self.screen(None, 'welcome')
         self.header = urwid.Text('PiDrop - manage your dropbox')
-        self.footer = urwid.Pile([divider,KEYPROMPT.build(),divider])
+        self.footer = urwid.Pile([urwid.Divider(' '),KEYPROMPT.build(),urwid.Divider(' ')])
 
     def screen(self, d, screen):
+        if 'LOOP' in globals():
+            loading(self.main)
         if screen in self.screens:
             self.main.original_widget = self.screens[screen]
         elif screen == 'welcome':
@@ -1544,6 +1566,7 @@ class PiDropWindow(object):
         elif screen == 'config':
             self.screens[screen] = self.config()
             self.main.original_widget = self.screens[screen]
+        KEYPROMPT.set(self.prompts[screen])
 
     def set_palette(self):
         if CONFIG.get('palette'):
@@ -1558,7 +1581,6 @@ class PiDropWindow(object):
         ),'body')
 
     def welcome(self):
-        KEYPROMPT.set(' ')
         welcome = urwid.AttrWrap(urwid.LineBox(urwid.Text('Select an option below by either clicking the option or pressing the associated key')),'details')
         browser_btn = urwid.Button('[F]ile Browser/Manager')
         urwid.connect_signal(browser_btn,'click',self.screen, 'browser')
@@ -1567,10 +1589,9 @@ class PiDropWindow(object):
         help_btn  = urwid.Button('[H]elp')
         urwid.connect_signal(help_btn,'click',self.screen, 'help')
         options = urwid.ListBox([style_btn(browser_btn),style_btn(config_btn),style_btn(help_btn)])
-        return urwid.Padding(urwid.Filler(MainContainer([('pack',divider),('pack',welcome),('pack',divider), options]), height=10), left=5, right=5, width=70, align='center')
+        return urwid.Padding(urwid.Filler(MainContainer([('pack',urwid.Divider(' ')),('pack',welcome),('pack',urwid.Divider(' ')), options]), height=10), left=5, right=5, width=70, align='center')
 
     def help(self):
-        KEYPROMPT.set('[B]ack to main menu | [F]ile browser | [C]onfig | [Q]uit')
         data = help_questions
         topnode = HelpParentNode(data)
         helplist = urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
@@ -1580,7 +1601,7 @@ class PiDropWindow(object):
             Use your mouse or the arrow keys on your keyboard to navigate through though question/answer list below.
 
             Throughout this UI you will find a list of available keys for the current screen in the footer."""))
-        return MainContainer([('pack',divider),('pack',nfo),('pack',divider), helplist])
+        return MainContainer([('pack',urwid.Divider(' ')),('pack',nfo),('pack',urwid.Divider(' ')), helplist])
 
     def config(self):
         w = ConfigWidget()
@@ -1593,11 +1614,11 @@ class PiDropWindow(object):
         global BROWSER
         global SEARCHBAR
         global NOTIFIER
-        loading(WINDOW.main)
-        KEYPROMPT.set()
+        global SYNCED_FILES
 
-        IMPORTER = ImporterWidget()
-        EXPORTER = ExporterWidget()
+        SYNCED_FILES = SyncedFiles()
+        IMPORTER = ImporterWidget(CONFIG.get('import-dir'), 'importer', 'Import Folder')
+        EXPORTER = ExporterWidget(CONFIG.get('export-dir'), 'exporter', 'Export Folder')
         PROPSBOX = PropsWidget()
         BROWSER = FileBrowserWidget()
         SEARCHBAR = SearchBarWidget()
@@ -1606,7 +1627,7 @@ class PiDropWindow(object):
         self.right = urwid.AttrWrap(
             urwid.Padding(
                 urwid.Pile([
-                    ('pack',divider),
+                    ('pack',urwid.Divider(' ')),
                     urwid.LineBox(PROPSBOX.build()),
                     urwid.LineBox(IMPORTER.build()),
                     urwid.LineBox(EXPORTER.build())]
@@ -1618,7 +1639,7 @@ class PiDropWindow(object):
         self.left = urwid.AttrWrap(urwid.Pile([
             ('pack',NOTIFIER.build()),
             urwid.Padding(BROWSER.build(), left=1, right=1),
-            ('pack',divider),
+            ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.build(), left=2, right=2))
         ]),'body')
 
@@ -1637,63 +1658,59 @@ class Cfg(object):
         return false
 
     def load(self):
-        with open(dir_path+'/cfg.json') as json_file:
+        if not os.path.isfile(CWD+'/cfg.json'):
+            return {}
+        with open(CWD+'/cfg.json') as json_file:
             return json.load(json_file)
-        return {}
 
     def set(self, data, key=False):
         if key:
             self.data[key] = data
         else:
             self.data = data
-        with open(dir_path+'/cfg.json', 'w') as outfile:
+        with open(CWD+'/cfg.json', 'w') as outfile:
                 json.dump(self.data, outfile)
 
+class SyncedFiles(object):
 
+    def __init__(self):
+        self.files = self.load()
+
+    def load(self):
+        if not os.path.isfile(CWD+'/flist.json'):
+            return {}
+        else:
+            with open(CWD+'/flist.json') as json_file:
+                return json.load(json_file)
+
+    def get(self, key):
+        if key in self.files:
+            return self.files[key]
+        return False
+
+    def set(self, data, key=False):
+        if key:
+            self.files[key] = data
+        else:
+            self.files = data
+        self.save_to_file()
+
+    def unset(self, key):
+        if key in self.files:
+            del self.files[key]
+        self.save_to_file()
+
+    def save_to_file(self):
+        with open(CWD+'/flist.json', 'w') as fp:
+            json.dump(self.files, fp)
 
 def unhandled_input(k):
     # update display of focus directory
     if k in ('q','Q'):
         raise urwid.ExitMainLoop()
 
-def get_dir(rootdir):
-    """
-    Creates a nested dictionary that represents the folder structure of a dir
-    """
-    load_synced_file_list()
-    dir = {}
-    rootdir = rootdir.rstrip(os.sep)
-    start = rootdir.rfind(os.sep) + 1
-    for path, dirs, files in os.walk(rootdir):
-        folders = path[start:].split(os.sep)
-        subdir = dict.fromkeys(files)
-        parent = reduce(dict.get, folders[:-1], dir)
-        parent[folders[-1]] = subdir
-    return format_dir(dir, rootdir[:-len(rootdir)+start-1])
-
-def format_dir(dir, path, overide_sync_check=False):
-    out=[]
-    rpath = ''
-    for k,v in dir.items():
-        osc = overide_sync_check
-        fpath = path+os.sep+k
-        children = []
-        if(v):
-            children=format_dir(v,fpath,osc)
-        o = {'name':k, 'path':path}
-        if len(children) > 0:
-            o['children']  = children
-        out.append(o)
-    return out
-
-
-
-def save_flist_to_json(dir_path, data):
-    with open(dir_path+'/flist.json', 'w') as fp:
-        json.dump(data, fp)
-
 def loading(target):
-    pile = urwid.Filler(MainContainer([('pack',divider),('pack',urwid.AttrWrap(urwid.Text('Loading...'),'loading')),('pack',divider)]), height=10)
+    pile = urwid.Filler(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrWrap(urwid.Text('Loading...'),'loading')),('pack',urwid.Divider(' '))]), height=10)
     target.original_widget = urwid.AttrWrap(urwid.Frame(
         urwid.Padding(pile, left=5, right=5, width=10, align='center')
     ),'body')
@@ -1702,52 +1719,24 @@ def loading(target):
 def style_btn(btn):
     return urwid.AttrWrap(btn,'button', 'button focus')
 
-# def load_config():
-#     global dir_path
-#     global cfga
-#     dir_path = os.path.dirname(os.path.realpath(__file__))
-#     if not os.path.isfile(dir_path+'/cfg.json'):
-#         update_config({"export-dir": "", "folders": [], "import-dir": "", "rootdir": "", "token": ""})
-#     with open(dir_path+'/cfg.json') as json_file:
-#             cfga = json.load(json_file)
-
-def load_synced_file_list():
-    global flist
-    if not os.path.isfile(dir_path+'/flist.json'):
-        flist = {}
-    else:
-        with open(dir_path+'/flist.json') as json_file:
-                flist = json.load(json_file)
-
-# def update_config(data):
-#     with open(dir_path+'/cfg.json', 'w') as outfile:
-#             json.dump(data, outfile)
-#     load_config()
-
 def connect_dbx():
-    global dbx
     if CONFIG.get('connection_tout'):
         tout = CONFIG.get('connection_tout')
     else:
         tout = 30
 
-    dbx = dropbox.Dropbox(CONFIG.get('token'), timeout=int(tout))
+    connect = dropbox.Dropbox(CONFIG.get('token'), timeout=int(tout))
     try:
-        dbx.users_get_current_account()
+        connect.users_get_current_account()
     except:
         sys.exit("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
-    return dbx
+    return connect
 
 def ui_init():
     global LOOP
     global WINDOW
     global CONFIG
-    global divider
-    global dir_path
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    divider = urwid.Divider(' ')
     CONFIG = Cfg()
-    #load_config()
     WINDOW = PiDropWindow()
     LOOP = urwid.MainLoop(WINDOW.build(), WINDOW.palette, unhandled_input=unhandled_input)
     LOOP.run()
