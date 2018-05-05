@@ -135,7 +135,7 @@ class PiDropTreeWidget(urwid.TreeWidget):
         self.path = node.get_value()['path']
         self.full_path = self.path+os.sep+self.name
         self.__super.__init__(node)
-        self._w = urwid.AttrWrap(self._w, None)
+        self._w = urwid.AttrMap(self._w, None)
 
         self.set_style()
 
@@ -149,23 +149,23 @@ class PiDropTreeWidget(urwid.TreeWidget):
     def set_style(self, selected=[]):
         if self.full_path in selected:
             if  os.path.isfile(self.full_path):
-                self._w.attr = 'file select'
-                self._w.focus_attr = 'file select focus'
+                self._w.attr_map = {None:'file select'}
+                self._w.focus_map = {None:'file select focus'}
             else:
-                self._w.attr = 'dir select'
-                self._w.focus_attr = 'dir select focus'
+                self._w.attr_map = {None:'dir select'}
+                self._w.focus_map = {None:'dir select focus'}
         else:
             if  os.path.isfile(self.full_path):
-                self._w.attr = 'file'
-                self._w.focus_attr = 'file focus'
+                self._w.attr_map = {None:'file'}
+                self._w.focus_map = {None:'file focus'}
             else:
-                self._w.attr = 'dir'
-                self._w.focus_attr = 'dir focus'
+                self._w.attr_map = {None:'dir'}
+                self._w.focus_map = {None:'dir focus'}
 
     def load_inner_widget(self):
         # if we have a shared folder create a label for it
         if 'shared' in self.get_node().get_value():
-            shared = urwid.AttrWrap(urwid.Text('[shared]'), 'shared')
+            shared = urwid.AttrMap(urwid.Text('[shared]'), 'shared')
         else:
             shared = urwid.Text('')
         # if our path exists in flist then get the display name
@@ -181,7 +181,7 @@ class PiDropTreeWidget(urwid.TreeWidget):
             self.sync_status = self.get_node().get_value()['sync']
             if self.sync_status == 'sync':
                 self.inner_w = urwid.Columns([
-                                (2, urwid.AttrWrap(
+                                (2, urwid.AttrMap(
                                             urwid.Text(u"\u25CF"),
                                             'sync')),
                                 (len(fname)+1,
@@ -190,14 +190,14 @@ class PiDropTreeWidget(urwid.TreeWidget):
                             ])
             elif self.sync_status == 'unsync':
                 self.inner_w = urwid.Columns([
-                                (2, urwid.AttrWrap(
+                                (2, urwid.AttrMap(
                                             urwid.Text(u"\u25CB"),'unsync')),
                                 (len(fname)+1,urwid.Text(fname)),
                                 (8,shared)
                             ])
             else:
                 self.inner_w = urwid.Columns([
-                                (2, urwid.AttrWrap(
+                                (2, urwid.AttrMap(
                                             urwid.Text(u"\u25A2"),'nosync')),
                                 (len(fname)+1,urwid.Text(fname)),
                                 (8,shared)])
@@ -219,11 +219,11 @@ class PiDropTreeWidget(urwid.TreeWidget):
         self.path_properties_data = [urwid.Text('')]
         if(hasattr(self, 'sync_status')):
             if self.sync_status == 'sync':
-                self.path_properties_data.append(urwid.AttrWrap(urwid.Text('[ SYNCED ]'),'sync'))
+                self.path_properties_data.append(urwid.AttrMap(urwid.Text('[ SYNCED ]'),'sync'))
             elif self.sync_status == 'unsync':
-                self.path_properties_data.append(urwid.AttrWrap(urwid.Text('[ SYNCING ]'),'unsync'))
+                self.path_properties_data.append(urwid.AttrMap(urwid.Text('[ SYNCING ]'),'unsync'))
             else:
-                self.path_properties_data.append(urwid.AttrWrap(urwid.Text('[ NOT SYNCED ]'),'nosync'))
+                self.path_properties_data.append(urwid.AttrMap(urwid.Text('[ NOT SYNCED ]'),'nosync'))
         self.path_properties_data.append(urwid.Text('Full path: '+self.full_path))
         if os.path.isfile(self.full_path):
             fsize = os.path.getsize(self.full_path)
@@ -264,7 +264,7 @@ class PiDropTreeWidget(urwid.TreeWidget):
             return
         caption = 'Rename %s to:\n' % (self.name)
         inputbox =PiDropDirInput(caption, 'rename', self.full_path)
-        BROWSER.listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([inputbox]), 'search_box_active')
+        BROWSER.listbox_container.original_widget =  urwid.AttrMap(urwid.ListBox([inputbox]), 'search_box_active')
         KEYPROMPT.set('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def new_dir(self):
@@ -274,7 +274,7 @@ class PiDropTreeWidget(urwid.TreeWidget):
             new_dir_location = self.path
         caption = 'New directory name:\n'
         inputbox = PiDropDirInput(caption, 'new_dir', new_dir_location)
-        BROWSER.listbox_container.original_widget =  urwid.AttrWrap(urwid.ListBox([inputbox]), 'search_box_active')
+        BROWSER.listbox_container.original_widget =  urwid.AttrMap(urwid.ListBox([inputbox]), 'search_box_active')
         KEYPROMPT.set('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
 
 
@@ -292,15 +292,24 @@ class ImporterTreeWidget(urwid.TreeWidget):
         self.__super.__init__(node)
         if os.path.isdir(self.full_path) and 'children' in self.get_node().get_value():
             self.update_expanded_icon()
-        self._w = urwid.AttrWrap(self._w, None)
-        self._w.attr = 'importer'
-        self._w.focus_attr = 'dir focus'
+        self._w = urwid.AttrMap(self._w, None)
+        self._w.attr_map = {None:'importer'}
+        self._w.focus_map = {None:'importer focus'}
 
     def get_display_text(self):
         return self.get_node().get_value()['name']
 
     def selectable(self):
         return True
+
+    def set_style(self):
+
+        if self.full_path in IMPORTER.listbox.selected:
+            self._w.attr_map = {None:'dir select'}
+            self._w.focus_map = {None:'dir select focus'}
+        else:
+            self._w.attr_map = {None:'importer'}
+            self._w.focus_map = {None:'importer focus'}
 
     def path_details(self):
         self.path_properties_data = [urwid.Text('')]
@@ -345,9 +354,9 @@ class ExporterTreeWidget(urwid.TreeWidget):
         self.__super.__init__(node)
         if os.path.isdir(self.full_path) and 'children' in self.get_node().get_value():
             self.update_expanded_icon()
-        self._w = urwid.AttrWrap(self._w, None)
-        self._w.attr = 'exporter'
-        self._w.focus_attr = 'dir focus'
+        self._w = urwid.AttrMap(self._w, None)
+        self._w.attr_map = {None:'exporter'}
+        self._w.focus_map = {None:'exporter focus'}
 
     def get_display_text(self):
         return self.get_node().get_value()['name']
@@ -491,7 +500,7 @@ class HelpTreeWidget(urwid.TreeWidget):
     expanded_icon = urwid.AttrMap(urwid.TreeWidget.expanded_icon, 'dirmark')
     def __init__(self, node):
         self.__super.__init__(node)
-        self._w = urwid.AttrWrap(self._w, None)
+        self._w = urwid.AttrMap(self._w, None)
         val = self.get_node().get_value()
         if self.get_node().get_depth() > 0:
             self.expanded = False
@@ -558,11 +567,41 @@ class ExporterParentNode(urwid.ParentNode):
         return childclass(childdata, parent=self, key=key, depth=childdepth)
 
 class DirWalker(urwid.TreeWalker):
+
     def __init__(self, start_from):
         self.focus = start_from
         urwid.connect_signal(self, 'modified', self.walking)
+
     def walking(self):
         self.focus.get_widget().path_details()
+
+    def __iter__(self):
+        """
+        Return an iterator over the positions in this ListBox.
+        If self._body does not implement positions() then iterate
+        from the focus widget down to the bottom, then from above
+        the focus up to the top.  This is the best we can do with
+        a minimal list walker implementation.
+        """
+        positions_fn = getattr(self, 'positions', None)
+        if positions_fn:
+            for pos in positions_fn():
+                yield pos
+            return
+
+        focus_widget, focus_pos = self.get_focus()
+        if focus_widget is None:
+            return
+        pos = focus_pos
+        while True:
+            yield pos
+            w, pos = self.get_next(pos)
+            if not w: break
+        pos = focus_pos
+        while True:
+            w, pos = self.get_prev(pos)
+            if not w: break
+            yield pos
 
 class PiDropWalker(urwid.TreeWalker):
 
@@ -879,6 +918,7 @@ class PiDropTreeList(urwid.TreeListBox):
         NOTIFIER.set('%d Selected files and folders were imported.' % (i), 'success')
         KEYPROMPT.set()
         IMPORTER.listbox.selected = []
+        IMPORTER.set_state(1)
         self.fmode = None
 
     def reload_walker(self):
@@ -905,10 +945,31 @@ class ImporterTreeList(urwid.TreeListBox):
 
         if key in ["s", "S"]:
             self.add_to_selected()
+        elif key in ["a", "A"]:
+            self.select_all_toggle()
         elif key in ["p", "P"]:
             self.body.focus.get_widget().more_path_details()
         else:
             return key
+
+    def select_all_toggle(self):
+        nodes = self.body.__iter__()
+        if len(self.selected) < 1:
+            all = True
+        else: all = False
+        self.selected = []
+        for node in nodes:
+            w = node.get_widget()
+            if os.path.isdir(w.full_path):
+                if node.get_depth() > 0:
+                    w.expanded = False
+                else:
+                    w.expanded = True
+                w.update_expanded_icon()
+            if all and node.get_depth()==1:
+                self.selected.append(w.full_path)
+            w.set_style()
+        self.set_importer_state()
 
     def add_to_selected(self):
         w = self.body.focus.get_widget()
@@ -928,32 +989,33 @@ class ImporterTreeList(urwid.TreeListBox):
                     NOTIFIER.set('To add this whole directory you first need to deselect any child nodes', 'error')
                     return
 
-
         if w.full_path == CONFIG.get('import-dir'):
             NOTIFIER.set('Cannot add the root directory to the selected list!', 'error')
         else:
             if w.full_path in self.selected:
                 self.selected.remove(w.full_path)
-                w._w.attr = 'body'#
-                w._w.focus_attr = 'dir focus'
             else:
                 self.selected.append(w.full_path)
-                w._w.attr = 'dir select'
-                w._w.focus_attr = 'dir select focus'
                 if os.path.isdir(w.full_path):
                     w.expanded = False
                     w.update_expanded_icon()
-            if len(self.selected) > 0:
-                KEYPROMPT.set('Focus a directory in the main director browser and press [i] to import the files there.')
-            else:
-                KEYPROMPT.set()
+            w.set_style()
+            self.set_importer_state()
+
+    def set_importer_state(self):
+        if len(self.selected) > 0:
+            IMPORTER.set_state(2)
+            KEYPROMPT.set(IMPORTER.frame.keyp)
+        else:
+            IMPORTER.set_state(1)
+            KEYPROMPT.set(IMPORTER.frame.keyp)
 
     def reload_walker(self):
         loading(IMPORTER.listbox_container)
         data = IMPORTER.get_dir()[0]
         topnode = ImporterParentNode(data)
         self.body = DirWalker(topnode)
-        IMPORTER.listbox_container.original_widget = IMPORTER.listbox
+        IMPORTER.listbox_container.original_widget = urwid.Padding(IMPORTER.listbox, left=2, right=2)
 
 class ExporterTreeList(urwid.TreeListBox):
 
@@ -962,7 +1024,7 @@ class ExporterTreeList(urwid.TreeListBox):
         data = EXPORTER.get_dir()[0]
         topnode = ExporterParentNode(data)
         self.body = DirWalker(topnode)
-        EXPORTER.listbox_container.original_widget = EXPORTER.listbox
+        EXPORTER.listbox_container.original_widget = urwid.Padding(EXPORTER.listbox, left=2, right=2)
 
 class DirWidget(object):
 
@@ -988,13 +1050,14 @@ class DirWidget(object):
     def build(self):
         footer = urwid.Padding(self.btns, left=2, right=2)
         footer = urwid.Pile([urwid.Divider(' '),footer,urwid.Divider(' ')])
-        footer = urwid.AttrWrap(footer, 'footer')
-        self.listbox_container = urwid.AttrWrap(urwid.Padding(self.listbox, left=2, right=2), self.style)
-        return urwid.Frame(
+        footer = urwid.AttrMap(footer, 'footer')
+        self.listbox_container = urwid.AttrMap(urwid.Padding(self.listbox, left=2, right=2), self.style)
+        self.frame = urwid.Frame(
             self.listbox_container,
-            header=urwid.AttrWrap(urwid.Text(self.title), 'header'),
-            footer =urwid.AttrWrap(footer, 'footer')
+            header=urwid.AttrMap(urwid.Text(self.title), 'header'),
+            footer =urwid.AttrMap(footer, 'footer')
         )
+        return self.frame
 
     def reload(self,d):
         self.listbox.reload_walker()
@@ -1041,10 +1104,28 @@ class DirWidget(object):
 
 class ImporterWidget(DirWidget):
 
+    states = {
+        1:{
+            'name':'not selected',
+            'prompt':'[S]elect/deselect | [A]ll/none'
+        },
+        2:{
+            'name':'selected',
+            'prompt':'Focus an item in the main browser and hit [i] to import the files there'
+        }
+    }
+
+    state = 1
+
     def set_listbox(self):
         data = self.get_dir()[0]
         topnode = ImporterParentNode(data)
         return ImporterTreeList(DirWalker(topnode))
+
+    def set_state(self, state):
+        self.state = state
+        if hasattr(self, 'frame'):
+            self.frame.keyp = self.states[state]['prompt']
 
 class ExporterWidget(DirWidget):
 
@@ -1063,8 +1144,8 @@ class FileBrowserWidget(object):
         self.listbox = self.set_listbox()
 
     def build(self):
-        lb = urwid.AttrWrap(self.listbox, 'body')
-        self.listbox_container = urwid.AttrWrap(urwid.Frame(lb), 'body')
+        lb = urwid.AttrMap(self.listbox, 'body')
+        self.listbox_container = urwid.AttrMap(urwid.Frame(lb), 'body')
         return self.listbox_container
 
     def set_listbox(self):
@@ -1157,17 +1238,19 @@ class FileBrowserWidget(object):
 class PropsWidget(object):
 
     def __init__(self):
-        self.content = urwid.AttrWrap(
+        self.content = urwid.AttrMap(
                             urwid.ListBox([
                                     urwid.Text('file and folder details will appear here')
-                            ]),'details')
+                            ]),'body')
 
     def build(self):
         pile = urwid.Pile([self.content])
-        return urwid.Frame(
-            urwid.AttrWrap(urwid.Padding(pile, left=2, right=2),'details'),
-            header=urwid.AttrWrap(urwid.Text('File/Directory Properties'), 'header')
+        self.frame = urwid.Frame(
+            urwid.AttrMap(urwid.Padding(pile, left=2, right=2),'body'),
+            header=urwid.AttrMap(urwid.Text('File/Directory Properties'), 'body')
         )
+        self.frame._selectable =False
+        return self.frame
 
 class SearchBarWidget(object):
 
@@ -1181,7 +1264,7 @@ class SearchBarWidget(object):
     def build(self):
         ftog = urwid.CheckBox('current folder only', on_state_change=self.ftoggle)
         regextog = urwid.CheckBox('regex', on_state_change=self.regextoggle)
-        self.bar = urwid.Columns([urwid.AttrWrap(self.inputbox, 'search_box'),(24, ftog),(10, regextog) ])
+        self.bar = urwid.Columns([urwid.AttrMap(self.inputbox, 'search_box'),(24, ftog),(10, regextog) ])
         return self.bar
 
     def set_inputbox(self):
@@ -1222,7 +1305,7 @@ class SearchListWidget(object):
         data = self.get_search_list()
         topnode = PiDropParentNode(data)
         walker = PiDropWalker(topnode)
-        return urwid.AttrWrap(urwid.TreeListBox(walker),'body')
+        return urwid.AttrMap(urwid.TreeListBox(walker),'body')
 
     def build(self):
         close_search = urwid.Button('close')
@@ -1231,7 +1314,7 @@ class SearchListWidget(object):
             ('pack',NOTIFIER.message),
             urwid.Padding(BROWSER.listbox, left=1, right=1),
             ('pack',urwid.Divider(' ')),
-            urwid.Padding(urwid.AttrWrap(urwid.LineBox(urwid.Columns([self.listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
+            urwid.Padding(urwid.AttrMap(urwid.LineBox(urwid.Columns([self.listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
             ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.bar, left=2, right=2))
         ],3)
@@ -1278,7 +1361,7 @@ class SearchListWidget(object):
 class NotificationsWidget(object):
 
     def __init__(self):
-        self.message = urwid.AttrWrap(urwid.Text(''), 'body')
+        self.message = urwid.AttrMap(urwid.Text(''), 'body')
 
     def build(self):
         return self.message
@@ -1287,11 +1370,11 @@ class NotificationsWidget(object):
         close = urwid.Button('X')
         urwid.connect_signal(close, 'click', self.clear)
         outp = urwid.Padding(urwid.Text('\n%s\n' % (msg)),left=2,right=2)
-        cols = urwid.AttrWrap(urwid.Columns([outp, (5, close)]),attr)
+        cols = urwid.AttrMap(urwid.Columns([outp, (5, close)]),attr)
         self.message.original_widget = cols
 
     def clear(self, d):
-        self.message.original_widget = urwid.AttrWrap(urwid.Text(''), 'body')
+        self.message.original_widget = urwid.AttrMap(urwid.Text(''), 'body')
 
 class KeyPromptWidget(object):
 
@@ -1301,7 +1384,7 @@ class KeyPromptWidget(object):
         self.txt = urwid.Text(self.default_text)
 
     def build(self):
-        return urwid.AttrWrap(self.txt, 'footer')
+        return urwid.AttrMap(self.txt, 'footer')
 
     def set(self, text=False):
         if not text:
@@ -1311,15 +1394,15 @@ class KeyPromptWidget(object):
 class ConfigWidget(object):
 
     def __init__(self):
-        self.errbox = urwid.AttrWrap(urwid.Text(''),'error')
-        self.menu = urwid.AttrWrap(urwid.ListBox([]),'body')
+        self.errbox = urwid.AttrMap(urwid.Text(''),'error')
+        self.menu = urwid.AttrMap(urwid.ListBox([]),'body')
         self.title = urwid.Text('')
 
         self.screen(None, 'home')
 
     def build(self):
 
-        return urwid.Padding(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrWrap(self.title,'details')),('pack',urwid.Divider(' ')), self.menu]), left=5, right=5, width=120, align='center')
+        return urwid.Padding(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrMap(self.title,'details')),('pack',urwid.Divider(' ')), self.menu]), left=5, right=5, width=120, align='center')
 
     def screen(self, d, screen):
         if screen == 'home':
@@ -1420,14 +1503,14 @@ class ConfigWidget(object):
             leveldown = urwid.Button(' - ')
             level = urwid.Text(' Directory Depth: %d' % (sd))
             levelup = urwid.Button(' + ')
-            level_ctrl = urwid.Columns([(7,urwid.AttrWrap(leveldown,'button')),(20,level),(7,urwid.AttrWrap(levelup,'button'))])
+            level_ctrl = urwid.Columns([(7,urwid.AttrMap(leveldown,'button')),(20,level),(7,urwid.AttrMap(levelup,'button'))])
             urwid.connect_signal(leveldown, 'click', self.change_sync_depth, sd-1)
             urwid.connect_signal(levelup, 'click', self.change_sync_depth, sd+1)
             remote_folders = CONFIG.get('all_remote_folders')['folders'] #list_remote_folders()
             outlist.append(level_ctrl)
             upd = urwid.Button('Update List')
             urwid.connect_signal(upd,'click',self.update_folder_list)
-            update_row = urwid.Columns([(15, urwid.AttrWrap(upd, 'details')),urwid.Text('(Last updated %s)' % (CONFIG.get('all_remote_folders')['upd']))])
+            update_row = urwid.Columns([(15, urwid.AttrMap(upd, 'details')),urwid.Text('(Last updated %s)' % (CONFIG.get('all_remote_folders')['upd']))])
             outlist.append(urwid.Divider(' '))
             outlist.append(update_row)
             outlist.append(urwid.Divider(' '))
@@ -1544,7 +1627,7 @@ class PiDropWindow(object):
         KEYPROMPT = KeyPromptWidget()
         DBX = connect_dbx()
         self.palette = self.set_palette()
-        self.main = urwid.AttrWrap(urwid.ListBox([]), 'body')
+        self.main = urwid.AttrMap(urwid.ListBox([]), 'body')
         self.screen(None, 'welcome')
         self.header = urwid.Text('PiDrop - manage your dropbox')
         self.footer = urwid.Pile([urwid.Divider(' '),KEYPROMPT.build(),urwid.Divider(' ')])
@@ -1574,14 +1657,15 @@ class PiDropWindow(object):
         else: return palettes['light']
 
     def build(self):
-        return urwid.AttrWrap(urwid.Frame(
+        self.body = urwid.AttrMap(urwid.Frame(
             self.main,
-            header=urwid.AttrWrap(self.header, 'header'),
-            footer=urwid.AttrWrap(self.footer, 'footer')
+            header=urwid.AttrMap(self.header, 'header'),
+            footer=urwid.AttrMap(urwid.Padding(self.footer, left=5, right=5), 'footer')
         ),'body')
+        return self.body
 
     def welcome(self):
-        welcome = urwid.AttrWrap(urwid.LineBox(urwid.Text('Select an option below by either clicking the option or pressing the associated key')),'details')
+        welcome = urwid.AttrMap(urwid.LineBox(urwid.Text('Select an option below by either clicking the option or pressing the associated key')),'details')
         browser_btn = urwid.Button('[F]ile Browser/Manager')
         urwid.connect_signal(browser_btn,'click',self.screen, 'browser')
         config_btn  = urwid.Button('[C]onfigure PiDrop')
@@ -1594,7 +1678,7 @@ class PiDropWindow(object):
     def help(self):
         data = help_questions
         topnode = HelpParentNode(data)
-        helplist = urwid.AttrWrap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
+        helplist = urwid.AttrMap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
         nfo = urwid.LineBox(urwid.Text("""
             Welcome to the help menu.
             -------------------------
@@ -1617,33 +1701,54 @@ class PiDropWindow(object):
         global SYNCED_FILES
 
         SYNCED_FILES = SyncedFiles()
+        PROPSBOX = PropsWidget()
         IMPORTER = ImporterWidget(CONFIG.get('import-dir'), 'importer', 'Import Folder')
         EXPORTER = ExporterWidget(CONFIG.get('export-dir'), 'exporter', 'Export Folder')
-        PROPSBOX = PropsWidget()
         BROWSER = FileBrowserWidget()
         SEARCHBAR = SearchBarWidget()
         NOTIFIER = NotificationsWidget()
 
-        self.right = urwid.AttrWrap(
+        right_boxes = urwid.Pile([
+            ('pack',urwid.Divider(' ')),
+            urwid.AttrMap(urwid.LineBox(PROPSBOX.build()), 'body', 'body_focus'),
+            urwid.AttrMap(urwid.LineBox(IMPORTER.build()), 'body', 'body_focus'),
+            urwid.AttrMap(urwid.LineBox(EXPORTER.build()), 'body', 'body_focus')]
+        )
+        IMPORTER.set_state(1)
+        EXPORTER.frame.keyp = ' '
+        PROPSBOX.frame.keyp = ' '
+
+        def rightcol_fchanged(pos):
+            w = right_boxes.__getitem__(pos)
+            if hasattr(w, 'keyp') and IMPORTER.state == 1:
+                KEYPROMPT.set(w.keyp)
+
+        right_boxes._contents.set_focus_changed_callback(rightcol_fchanged)
+        self.right = urwid.AttrMap(
             urwid.Padding(
-                urwid.Pile([
-                    ('pack',urwid.Divider(' ')),
-                    urwid.LineBox(PROPSBOX.build()),
-                    urwid.LineBox(IMPORTER.build()),
-                    urwid.LineBox(EXPORTER.build())]
-                ),
+                right_boxes,
                 right=1
             ),
             'body'
         )
-        self.left = urwid.AttrWrap(urwid.Pile([
+        self.left = urwid.AttrMap(urwid.Pile([
             ('pack',NOTIFIER.build()),
             urwid.Padding(BROWSER.build(), left=1, right=1),
             ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.build(), left=2, right=2))
         ]),'body')
 
-        return MainContainer([urwid.Columns([('weight', 3,self.left), self.right])])
+        cols = urwid.Columns([('weight', 3,self.left), self.right])
+
+        def cols_fchanged(pos):
+            if pos == 1:
+                rightcol_fchanged(right_boxes.focus_position)
+            elif IMPORTER.state == 1:
+                KEYPROMPT.set()
+
+        cols._contents.set_focus_changed_callback(cols_fchanged)
+
+        return MainContainer([cols])
 
 class Cfg(object):
 
@@ -1710,14 +1815,14 @@ def unhandled_input(k):
         raise urwid.ExitMainLoop()
 
 def loading(target):
-    pile = urwid.Filler(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrWrap(urwid.Text('Loading...'),'loading')),('pack',urwid.Divider(' '))]), height=10)
-    target.original_widget = urwid.AttrWrap(urwid.Frame(
+    pile = urwid.Filler(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrMap(urwid.Text('Loading...'),'loading')),('pack',urwid.Divider(' '))]), height=10)
+    target.original_widget = urwid.AttrMap(urwid.Frame(
         urwid.Padding(pile, left=5, right=5, width=10, align='center')
     ),'body')
     LOOP.draw_screen()
 
 def style_btn(btn):
-    return urwid.AttrWrap(btn,'button', 'button focus')
+    return urwid.AttrMap(btn,'button', 'button focus')
 
 def connect_dbx():
     if CONFIG.get('connection_tout'):

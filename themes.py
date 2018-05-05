@@ -3,10 +3,13 @@
 palettes = {
         'light': [
             ('body', 'black', 'light gray'),
+            ('body_focus', 'yellow', 'yellow'),
             ('header', 'white', 'dark blue'),
             ('footer', 'dark green', 'light gray'),
             ('importer', 'white', 'light blue'),
+            ('importer focus', 'white,bold', 'dark blue'),
             ('exporter', 'light blue', 'dark gray'),
+            ('exporter focus', 'light blue,bold', 'black'),
             ('diradder', 'dark blue', 'white'),
             ('search_box', 'dark blue', 'white'),
             ('search_box_active', 'black', 'yellow'),
@@ -27,14 +30,18 @@ palettes = {
             ('unsync', 'dark blue', 'light gray'),
             ('nosync', 'dark gray', 'light gray'),
             ('shared', 'white', 'dark gray'),
-            ('loading', 'black,blink', 'light gray')
+            ('loading', 'black,blink', 'light gray'),
+            ('dirmark', 'dark blue', 'light gray')
         ],
         'dark':[
             ('body', 'light gray', 'black'),
+            ('body_focus', 'light red', 'black'),
             ('header', 'white', 'dark magenta'),
             ('footer', 'light green', 'black'),
             ('importer', 'white', 'dark blue'),
+            ('importer focus', 'white,bold', 'light blue'),
             ('exporter', 'white', 'dark blue'),
+            ('exporter focus', 'white,bold', 'light blue'),
             ('diradder', 'white', 'dark blue'),
             ('search_box', 'white', 'dark blue'),
             ('search_box_active', 'yellow', 'black'),
@@ -55,14 +62,18 @@ palettes = {
             ('unsync', 'dark blue', 'black'),
             ('nosync', 'dark gray', 'black'),
             ('shared', 'white', 'dark gray'),
-            ('loading', 'light gray,blink', 'black')
+            ('loading', 'light gray,blink', 'black'),
+            ('dirmark', 'light blue', 'black')
         ],
         'system defaults':[
             ('body', 'default', 'default'),
+            ('body_focus', 'default,bold', 'default'),
             ('header', 'default', 'default'),
             ('footer', 'default', 'default'),
             ('importer', 'default', 'default'),
+            ('importer focus', 'default', 'default'),
             ('exporter', 'default', 'default'),
+            ('exporter focus', 'default', 'default'),
             ('diradder', 'default', 'default'),
             ('search_box', 'default', 'default'),
             ('search_box_active', 'default', 'default'),
@@ -83,6 +94,7 @@ palettes = {
             ('unsync', 'default', 'default'),
             ('nosync', 'default', 'default'),
             ('shared', 'default', 'default'),
-            ('loading', 'default,blink', 'default')
+            ('loading', 'default,blink', 'default'),
+            ('dirmark', 'default', 'default')
         ]
     }
