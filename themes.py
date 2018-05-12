@@ -31,7 +31,8 @@ palettes = {
             ('nosync', 'dark gray', 'light gray'),
             ('shared', 'white', 'dark gray'),
             ('loading', 'black,blink', 'light gray'),
-            ('dirmark', 'dark blue', 'light gray')
+            ('dirmark', 'dark blue', 'light gray'),
+            ('mode', 'dark blue', 'light gray')
         ],
         'dark':[
             ('body', 'light gray', 'black'),
@@ -63,7 +64,8 @@ palettes = {
             ('nosync', 'dark gray', 'black'),
             ('shared', 'white', 'dark gray'),
             ('loading', 'light gray,blink', 'black'),
-            ('dirmark', 'light blue', 'black')
+            ('dirmark', 'light blue', 'black'),
+            ('mode', 'light red', 'black')
         ],
         'system defaults':[
             ('body', 'default', 'default'),
@@ -95,6 +97,7 @@ palettes = {
             ('nosync', 'default', 'default'),
             ('shared', 'default', 'default'),
             ('loading', 'default,blink', 'default'),
-            ('dirmark', 'default', 'default')
+            ('dirmark', 'default', 'default'),
+            ('mode', 'default', 'default')
         ]
     }

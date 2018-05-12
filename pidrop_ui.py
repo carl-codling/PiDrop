@@ -43,11 +43,31 @@ class PiDropSearchInput(urwid.Edit):
     def keypress(self, size, key):
         key = self.__super.keypress(size, key)
         if key == 'enter':
-            SEARCHBAR.build_search_list()
-            #self.set_edit_text('')
+            if len(self.get_edit_text())>0:
+                SEARCHBAR.build_search_list()
+            else:
+                NOTIFIER.set('you didn\'t enter a search term!', 'error')
         elif key == 'esc':
-            KEYPROMPT.set()
-            SEARCHLIST.clear_search_list()
+            WINDOW.frame.set_state('default')
+            WINDOW.frame.set_focus_path(['body',0,0,1])
+            SEARCHBAR.clear_search_list()
+        elif key == 'up':
+            if 'SEARCHLIST' in globals():
+                WINDOW.frame.set_focus_path(['body',0,0,3])
+            else:
+                WINDOW.frame.set_focus_path(['body',0,0,1])
+        elif key == 'right':
+            WINDOW.frame.set_focus_path(['body',0,0,3,1])
+        elif  len(self.get_edit_text())>0:
+            if len(BROWSER.listbox.selected) > 0:
+                BROWSER.listbox.selected = []
+                BROWSER.listbox.body.reset_all_nodes_style()
+            WINDOW.frame.set_state('search focussed')
+        else:
+            if len(BROWSER.listbox.selected) > 0:
+                BROWSER.listbox.selected = []
+                BROWSER.listbox.body.reset_all_nodes_style()
+            WINDOW.frame.set_state('search empty')
 
 class PiDropDirInput(urwid.Edit):
 
@@ -63,18 +83,17 @@ class PiDropDirInput(urwid.Edit):
 
             if self.fmode == 'new_dir' and len(dirname) > 0:
                 remote_path = self.target_dir[len(CONFIG.get('rootdir'))-1:]+os.sep+dirname
-                NOTIFIER.set(remote_path, 'success')
                 try:
                     res = DBX.files_create_folder_v2(
                         remote_path,
                         autorename=True)
                 except dropbox.exceptions.ApiError as err:
                     NOTIFIER.set('*** API error: '+ str(err))
+                    WINDOW.frame.set_state('default')
                     return None
                 new_local_loc = self.target_dir+os.sep+os.path.basename(res.metadata.path_lower)
                 os.mkdir(new_local_loc)
                 NOTIFIER.set('New directory %s created at %s' % (dirname,self.target_dir), 'success')
-                KEYPROMPT.set()
                 SYNCED_FILES.set({'name':dirname}, new_local_loc)
                 if os.path.isdir(BROWSER.focus_widget.full_path):
                     targ = BROWSER.focus_widget.get_node()
@@ -90,9 +109,10 @@ class PiDropDirInput(urwid.Edit):
                 self.rename_path(dirname)
 
             BROWSER.listbox_container.original_widget = BROWSER.listbox
+            WINDOW.frame.set_state('default')
 
         elif key == 'esc':
-            KEYPROMPT.set()
+            WINDOW.frame.set_state('default')
             BROWSER.listbox_container.original_widget = BROWSER.listbox
 
     def rename_path(self, new_name):
@@ -105,7 +125,7 @@ class PiDropDirInput(urwid.Edit):
                 autorename=True)
         except dropbox.exceptions.ApiError as err:
             NOTIFIER.set('*** API error: %s' % (str(err)), 'error')
-            KEYPROMPT.set()
+            WINDOW.frame.set_state('default')
             return None
         new_local_path = os.sep + CONFIG.get('rootdir').strip(os.sep) + res.metadata.path_lower
         try:
@@ -114,7 +134,6 @@ class PiDropDirInput(urwid.Edit):
             NOTIFIER.set(err,'error')
             return
         NOTIFIER.set('%s > renamed to > %s' % (self.target_dir[rootlen:],new_local_path[rootlen:]),'success')
-        KEYPROMPT.set()
         new_fname = res.metadata.path_display.split(os.sep)[-1]
         SYNCED_FILES.set({'name':new_fname}, new_local_path)
         BROWSER.focus_widget.get_node()._value['name'] = new_fname
@@ -175,7 +194,7 @@ class PiDropTreeWidget(urwid.TreeWidget):
             fname = self.name
         # if we're at the root node simply set a textual name
         if self.get_node().get_depth()<1:
-            self.inner_w =  urwid.Text(self.name)
+            self.inner_w =  urwid.Text('[1] '+self.name)
         # otherwise try to determine sync status
         elif 'sync' in self.get_node().get_value():
             self.sync_status = self.get_node().get_value()['sync']
@@ -265,7 +284,6 @@ class PiDropTreeWidget(urwid.TreeWidget):
         caption = 'Rename %s to:\n' % (self.name)
         inputbox =PiDropDirInput(caption, 'rename', self.full_path)
         BROWSER.listbox_container.original_widget =  urwid.AttrMap(urwid.ListBox([inputbox]), 'search_box_active')
-        KEYPROMPT.set('[enter] to confirm | [esc] to cancel and go back to previous screen')
 
     def new_dir(self):
         if os.path.isdir(self.full_path):
@@ -275,8 +293,6 @@ class PiDropTreeWidget(urwid.TreeWidget):
         caption = 'New directory name:\n'
         inputbox = PiDropDirInput(caption, 'new_dir', new_dir_location)
         BROWSER.listbox_container.original_widget =  urwid.AttrMap(urwid.ListBox([inputbox]), 'search_box_active')
-        KEYPROMPT.set('[enter] to confirm creation of new dir | [esc] to cancel and go back to previous screen')
-
 
 class ImporterTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
@@ -339,7 +355,6 @@ class ImporterTreeWidget(urwid.TreeWidget):
 
         PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
-
 class ExporterTreeWidget(urwid.TreeWidget):
     """ Display widget for leaf nodes """
     unexpanded_icon = urwid.AttrMap(urwid.TreeWidget.unexpanded_icon, 'dirmark')
@@ -372,6 +387,10 @@ class ExporterTreeWidget(urwid.TreeWidget):
         return key
 
     def unhandled_keys(self, size, key):
+
+        if not WINDOW.frame.is_allowed_key(key):
+            return key
+
         if key in ["p", "P"]:
             self.more_path_details()
         else:
@@ -405,7 +424,6 @@ class ExporterTreeWidget(urwid.TreeWidget):
 
         PROPSBOX.content.original_widget = urwid.ListBox(self.path_properties_data)
 
-
 class PiDropNode(urwid.TreeNode):
     """ Data storage object for leaf nodes """
     def load_widget(self):
@@ -413,7 +431,6 @@ class PiDropNode(urwid.TreeNode):
 
     def has_children(self):
         return False
-
 
 class ImporterNode(urwid.TreeNode):
     """ Data storage object for leaf nodes """
@@ -424,7 +441,6 @@ class ExporterNode(urwid.TreeNode):
     """ Data storage object for leaf nodes """
     def load_widget(self):
         return ExporterTreeWidget(self)
-
 
 class PiDropParentNode(urwid.ParentNode):
     """ Data storage object for interior/parent nodes """
@@ -466,7 +482,6 @@ class PiDropParentNode(urwid.ParentNode):
             childclass = PiDropNode
 
         return childclass(childdata, parent=self, key=key, depth=childdepth)
-
 
 class HelpParentNode(urwid.ParentNode):
     def load_widget(self):
@@ -662,25 +677,6 @@ class PiDropWalker(urwid.TreeWalker):
             if not w: break
             yield pos
 
-class MainContainer(urwid.Pile):
-    def keypress(self, size, key):
-        key = self.__super.keypress(size, key)
-        if key:
-            key = self.unhandled_keys(size, key)
-        return key
-
-    def unhandled_keys(self, size, key):
-        if key in ['b', 'B']:
-            WINDOW.screen(None, 'welcome')
-        if key in ["f", "F"]:
-            WINDOW.screen(None, 'browser')
-        if key in ["c", "C"]:
-            WINDOW.screen(None, 'config')
-        if key in ["h", "H"]:
-            WINDOW.screen(None, 'help')
-        else:
-            return key
-
 class PiDropTreeList(urwid.TreeListBox):
 
     selected = [] # List of paths that are selected for operations
@@ -693,32 +689,47 @@ class PiDropTreeList(urwid.TreeListBox):
         return key
 
     def unhandled_keys(self, size, key):
+
+        if not WINDOW.frame.is_allowed_key(key):
+            return key
+
         w = self.body.focus.get_widget()
+
         if key in ["s", "S"]:
             self.add_to_selected()
+            if len(self.selected) > 0:
+                WINDOW.frame.set_state('files selected')
+            else:
+                WINDOW.frame.set_state('default')
 
         elif key in ['m','M']:
             self.confirm_move_files()
 
         elif key in ['d','D']:
             self.confirm_del_files()
+            WINDOW.frame.set_state('confirm delete')
 
         elif key in ['e','E']:
             self.confirm_export_files()
+            WINDOW.frame.set_state('confirm export')
 
         elif key in ["i", "I"]:
             self.confirm_import_files()
 
-        elif key in ["n", "N"]:
+        elif key in ["n",'N']:
             w.new_dir()
+            WINDOW.frame.set_state('new dir')
 
         elif key in ["r", "R"]:
             w.init_rename_path()
+            WINDOW.frame.set_state('rename')
 
         elif key in ["p", "P"]:
             w.more_path_details()
 
         elif key == 'enter':
+
+            WINDOW.frame.set_state('default')
 
             if self.fmode == 'move':
                 self.move_files()
@@ -733,15 +744,18 @@ class PiDropTreeList(urwid.TreeListBox):
                 self.import_files()
 
         elif key == 'esc':
-            self.selected = []
-            self.fmode = None
-            KEYPROMPT.set()
-            NOTIFIER.clear(None)
-            #build_pidrop_list()
-            self.reload_walker()
+            IMPORTER.listbox.reset()
+            self.reset()
 
         else:
             return key
+
+    def reset(self):
+        self.selected = []
+        self.fmode = None
+        WINDOW.frame.set_state('default')
+        NOTIFIER.clear(None)
+        self.reload_walker()
 
     def add_to_selected(self):
         w = self.body.focus.get_widget()
@@ -772,16 +786,12 @@ class PiDropTreeList(urwid.TreeListBox):
                 if os.path.isdir(w.full_path) and 'children' in self.body.focus.get_value():
                     w.expanded = False
                     w.update_expanded_icon()
-            if len(self.selected) > 0:
-                KEYPROMPT.set('[M]ove selected files | [D]elete selected files | [E]xport selected files | [esc] Cancel')
-            else:
-                KEYPROMPT.set()
         w.set_style(self.selected)
 
     def confirm_move_files(self):
         if len(self.selected) > 0:
             self.fmode = 'move'
-            KEYPROMPT.set('Select (focus) the destination and hit [ENTER] to confirm moving the selected files')
+            WINDOW.frame.set_state('confirm move')
         else:
             self.fmode = None
             NOTIFIER.set('No files selected!', 'error')
@@ -819,7 +829,6 @@ class PiDropTreeList(urwid.TreeListBox):
 
         self.reload_walker()
         NOTIFIER.set('%d Selected files/folders were moved.' % (i), 'success')
-        KEYPROMPT.set()
         self.selected = []
         self.fmode = None
 
@@ -827,7 +836,6 @@ class PiDropTreeList(urwid.TreeListBox):
         if len(self.selected) < 1:
             self.add_to_selected()
         self.fmode = 'delete'
-        KEYPROMPT.set('Press [ENTER] to confirm deletion of the selected files')
 
     def delete_files(self):
         rootlen = len(CONFIG.get('rootdir'))
@@ -848,7 +856,6 @@ class PiDropTreeList(urwid.TreeListBox):
                 out += 'file deleted [%s]\n' % (f)
                 nfiles +=1
         NOTIFIER.set('%d files and %d folders have been deleted.\n------------------------\n%s' % (nfiles,nfolders,out), 'success')
-        KEYPROMPT.set()
         self.selected = []
         self.fmode = None
         self.reload_walker()
@@ -857,7 +864,6 @@ class PiDropTreeList(urwid.TreeListBox):
         if len(self.selected) < 1:
             self.add_to_selected()
         self.fmode = 'export'
-        KEYPROMPT.set('Press [ENTER] to confirm copying the selected files to the export folder')
 
     def export_files(self):
         loading(EXPORTER.listbox)
@@ -882,14 +888,13 @@ class PiDropTreeList(urwid.TreeListBox):
         self.selected = []
         self.fmode = None
         NOTIFIER.set('files have been exported.', 'success')
-        KEYPROMPT.set()
         EXPORTER.listbox.reload_walker()
         self.body.reset_all_nodes_style()
 
     def confirm_import_files(self):
         if len(IMPORTER.listbox.selected) > 0:
             self.fmode = 'import'
-            KEYPROMPT.set('Press [ENTER] to confirm copying the selected files from the imports folder to here.')
+            WINDOW.frame.set_state('confirm import')
         else:
             self.fmode = None
             NOTIFIER.set('No files selected!', 'error')
@@ -912,11 +917,9 @@ class PiDropTreeList(urwid.TreeListBox):
             newp = p+os.sep+os.path.basename(f)
             os.rename(f, newp)
             i+=1
-        #build_pidrop_list('importer')
         self.reload_walker()
         IMPORTER.listbox.reload_walker()
         NOTIFIER.set('%d Selected files and folders were imported.' % (i), 'success')
-        KEYPROMPT.set()
         IMPORTER.listbox.selected = []
         IMPORTER.set_state(1)
         self.fmode = None
@@ -943,14 +946,28 @@ class ImporterTreeList(urwid.TreeListBox):
 
     def unhandled_keys(self, size, key):
 
+        if not WINDOW.frame.is_allowed_key(key):
+            return key
+
         if key in ["s", "S"]:
             self.add_to_selected()
+            BROWSER.listbox.selected = []
+            BROWSER.listbox.body.reset_all_nodes_style()
         elif key in ["a", "A"]:
             self.select_all_toggle()
+            BROWSER.listbox.selected = []
+            BROWSER.listbox.body.reset_all_nodes_style()
         elif key in ["p", "P"]:
             self.body.focus.get_widget().more_path_details()
+        elif key == 'esc':
+            self.reset()
+            WINDOW.frame.set_state('importer focussed')
         else:
             return key
+
+    def reset(self):
+        self.selected = []
+        self.reload_walker()
 
     def select_all_toggle(self):
         nodes = self.body.__iter__()
@@ -1004,11 +1021,9 @@ class ImporterTreeList(urwid.TreeListBox):
 
     def set_importer_state(self):
         if len(self.selected) > 0:
-            IMPORTER.set_state(2)
-            KEYPROMPT.set(IMPORTER.frame.keyp)
+            WINDOW.frame.set_state('importer files selected')
         else:
-            IMPORTER.set_state(1)
-            KEYPROMPT.set(IMPORTER.frame.keyp)
+            WINDOW.frame.set_state('importer focussed')
 
     def reload_walker(self):
         loading(IMPORTER.listbox_container)
@@ -1026,6 +1041,32 @@ class ExporterTreeList(urwid.TreeListBox):
         self.body = DirWalker(topnode)
         EXPORTER.listbox_container.original_widget = urwid.Padding(EXPORTER.listbox, left=2, right=2)
 
+class DirFrame(urwid.Frame):
+
+    def __init__(self, body, header, footer, p):
+        self.__super.__init__(body, header, footer)
+        self.parent = p
+
+    def keypress(self, size, key):
+        key = self.__super.keypress(size, key)
+        if key:
+            key = self.unhandled_keys(size, key)
+        return key
+
+    def unhandled_keys(self, size, key):
+
+        if not WINDOW.frame.is_allowed_key(key):
+            return key
+
+        if key in ['e', 'E']:
+            self.parent.empty(None)
+
+        elif key in ['r','R']:
+            self.parent.reload(None)
+
+        else:
+            return key
+
 class DirWidget(object):
 
     def __init__(self, dir, style, title):
@@ -1041,21 +1082,22 @@ class DirWidget(object):
         return urwid.TreeListBox(urwid.TreeWalker(topnode))
 
     def set_btns(self):
-        empty = urwid.Button('Empty '+self.title)
+        empty = urwid.Button('Empty')
         urwid.connect_signal(empty, 'click', self.empty)
         reload = urwid.Button('Reload')
         urwid.connect_signal(reload, 'click', self.reload)
-        return urwid.Columns([empty,reload])
+        return urwid.Columns([(9,empty),urwid.Divider('   '),(10,reload)])
 
     def build(self):
         footer = urwid.Padding(self.btns, left=2, right=2)
         footer = urwid.Pile([urwid.Divider(' '),footer,urwid.Divider(' ')])
         footer = urwid.AttrMap(footer, 'footer')
         self.listbox_container = urwid.AttrMap(urwid.Padding(self.listbox, left=2, right=2), self.style)
-        self.frame = urwid.Frame(
+        self.frame = DirFrame(
             self.listbox_container,
-            header=urwid.AttrMap(urwid.Text(self.title), 'header'),
-            footer =urwid.AttrMap(footer, 'footer')
+            header = urwid.AttrMap(urwid.Text(self.title), 'header'),
+            footer = urwid.AttrMap(footer, 'footer'),
+            p = self
         )
         return self.frame
 
@@ -1104,28 +1146,10 @@ class DirWidget(object):
 
 class ImporterWidget(DirWidget):
 
-    states = {
-        1:{
-            'name':'not selected',
-            'prompt':'[S]elect/deselect | [A]ll/none'
-        },
-        2:{
-            'name':'selected',
-            'prompt':'Focus an item in the main browser and hit [i] to import the files there'
-        }
-    }
-
-    state = 1
-
     def set_listbox(self):
         data = self.get_dir()[0]
         topnode = ImporterParentNode(data)
         return ImporterTreeList(DirWalker(topnode))
-
-    def set_state(self, state):
-        self.state = state
-        if hasattr(self, 'frame'):
-            self.frame.keyp = self.states[state]['prompt']
 
 class ExporterWidget(DirWidget):
 
@@ -1258,6 +1282,8 @@ class SearchBarWidget(object):
     in_folder = False # folder to perform search in. False = all
     regex = False
 
+    state = 'search empty'
+
     def __init__(self):
         self.inputbox = self.set_inputbox()
 
@@ -1265,10 +1291,27 @@ class SearchBarWidget(object):
         ftog = urwid.CheckBox('current folder only', on_state_change=self.ftoggle)
         regextog = urwid.CheckBox('regex', on_state_change=self.regextoggle)
         self.bar = urwid.Columns([urwid.AttrMap(self.inputbox, 'search_box'),(24, ftog),(10, regextog) ])
+
+        def focus_changed(pos):
+            self.bar._invalidate()
+            if pos == 0:
+                if len(self.inputbox.get_edit_text()) > 0:
+                    self.state = 'search focussed'
+                else:
+                    self.state = 'search empty'
+            else:
+                self.state = 'search opts'
+
+            WINDOW.frame.set_state(self.state)
+
+        self.bar._contents.set_focus_changed_callback(focus_changed)
+
         return self.bar
 
+
+
     def set_inputbox(self):
-        inp = PiDropSearchInput('Search:')
+        inp = PiDropSearchInput('[2] Search:')
         urwid.connect_signal(inp, 'change', self.set_search)
         return inp
 
@@ -1296,6 +1339,20 @@ class SearchBarWidget(object):
         SEARCHLIST = SearchListWidget()
         WINDOW.left.original_widget = SEARCHLIST.build()
 
+
+    def clear_search_list(self,d=None):
+        global SEARCHLIST
+        self.inputbox.set_edit_text('')
+        self.search_term = None
+        if 'SEARCHLIST' in globals():
+            del SEARCHLIST
+            WINDOW.left.original_widget = urwid.Pile([
+                ('pack',NOTIFIER.message),
+                urwid.Padding(BROWSER.listbox, left=1, right=1),
+                ('pack',urwid.Divider(' ')),
+                ('pack',urwid.Padding(self.bar, left=2, right=2))
+            ])
+
 class SearchListWidget(object):
 
     def __init__(self):
@@ -1309,24 +1366,13 @@ class SearchListWidget(object):
 
     def build(self):
         close_search = urwid.Button('close')
-        urwid.connect_signal(close_search, 'click', self.clear_search_list)
+        urwid.connect_signal(close_search, 'click', SEARCHBAR.clear_search_list)
         return urwid.Pile([
             ('pack',NOTIFIER.message),
             urwid.Padding(BROWSER.listbox, left=1, right=1),
-            ('pack',urwid.Divider(' ')),
             urwid.Padding(urwid.AttrMap(urwid.LineBox(urwid.Columns([self.listbox,(9,urwid.ListBox([close_search]))])),'body'), left=1, right=1),
-            ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.bar, left=2, right=2))
         ],3)
-
-    def clear_search_list(self,d):
-        SEARCHBAR.search_term = None
-        WINDOW.left.original_widget = urwid.Pile([
-            ('pack',NOTIFIER.message),
-            urwid.Padding(BROWSER.listbox, left=1, right=1),
-            ('pack',urwid.Divider(' ')),
-            ('pack',urwid.Padding(SEARCHBAR.bar, left=2, right=2))
-        ])
 
     def get_search_list(self):
         result = []
@@ -1402,7 +1448,7 @@ class ConfigWidget(object):
 
     def build(self):
 
-        return urwid.Padding(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrMap(self.title,'details')),('pack',urwid.Divider(' ')), self.menu]), left=5, right=5, width=120, align='center')
+        return urwid.Padding(urwid.Pile([('pack',urwid.Divider(' ')),('pack',urwid.AttrMap(self.title,'details')),('pack',urwid.Divider(' ')), self.menu]), left=5, right=5, width=120, align='center')
 
     def screen(self, d, screen):
         if screen == 'home':
@@ -1610,16 +1656,159 @@ class ConfigWidget(object):
             update_config(self.cfg)
             self.screen(None, 'dirs')
 
+class PiDropMainFrame(urwid.Frame):
+
+    states = {
+        'welcome':{
+            'current':'default',
+            'states':{
+                'default':{
+                    'prompt':'[F]ile Browser | [C]onfig | [H]elp | [Q]uit'
+                }
+            }
+        },
+        'browser':{
+            'current':'default',
+            'states':{
+                'default':{
+                    'prompt':'[B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp | [Q]uit',
+                    'keys':['b','s','n','r','p','h','q','d','e']
+                },
+                'files selected':{
+                    'prompt':'[S]elect a file/dir | [M]ove selected files | [D]elete selected files | [E]xport selected files | [ESC] Cancel',
+                    'keys':['s','m','d','e','esc']
+                },
+                'confirm move':{
+                    'prompt':'Select (focus) the destination and hit [ENTER] to confirm moving the selected files | [ESC] Cancel',
+                    'keys':['enter','esc']
+                },
+                'confirm delete':{
+                    'prompt':'Press [ENTER] to confirm deletion of the selected files | [ESC] Cancel',
+                    'keys':['enter','esc']
+                },
+                'confirm export':{
+                    'prompt':'Press [ENTER] to confirm copying the selected files to the export folder | [ESC] Cancel',
+                    'keys':['enter','esc']
+                },
+                'confirm import':{
+                    'prompt':'Press [ENTER] to confirm copying the selected files from the imports folder to here | [ESC] Cancel',
+                    'keys':['enter','esc']
+                },
+                'rename':{
+                    'prompt':'[ENTER] to confirm | [ESC] to cancel and go back to previous screen',
+                    'keys':['enter','esc']
+                },
+                'new dir':{
+                    'prompt':'[ENTER] to confirm creation of new dir | [ESC] to cancel and go back to previous screen',
+                    'keys':['enter','esc']
+                },
+                'search empty':{
+                    'prompt':'type a search term and hit [ENTER] to search | [ESC] to cancel',
+                    'keys':['enter','esc']
+                },
+                'search focussed':{
+                    'prompt':'[ENTER] to search | [ESC] to cancel',
+                    'keys':['enter','esc']
+                },
+                'search opts':{
+                    'prompt':'[ENTER] select/deselect',
+                    'keys':['enter']
+                },
+                'exporter focussed':{
+                    'prompt':'[E]mpty | [R]eload | [P]roperties',
+                    'keys':['e','r', 'p']
+                },
+                'importer focussed':{
+                    'prompt':'[S]elect/deselect | [A]ll/none | [E]mpty | [R]eload | [P]roperties',
+                    'keys':['s','a','e','r','p']
+                },
+                'importer files selected':{
+                    'prompt':'Focus an item in the main browser and hit [i] to import the files there | [ESC] Cancel',
+                    'keys':['i','esc','p','s']
+                }
+            }
+        },
+        'config':{
+            'current':'default',
+            'states':{
+                'default':{
+                    'prompt':'config default'
+                }
+            }
+        },
+        'help':{
+            'current':'default',
+            'states':{
+                'default':{
+                    'prompt':'help default'
+                }
+            }
+        }
+    }
+
+    screen = 'welcome'
+
+    def keypress(self, size, key):
+        key = self.__super.keypress(size, key)
+        if key:
+            key = self.unhandled_keys(size, key)
+        return key
+
+    def unhandled_keys(self, size, key):
+
+        if key in ['b', 'B']:
+            WINDOW.screen(None, 'welcome')
+            self.set_screen('welcome')
+
+        elif key in ["f", "F"]:
+            WINDOW.screen(None, 'browser')
+            self.set_screen('browser')
+
+        elif key in ["c", "C"]:
+            WINDOW.screen(None, 'config')
+            self.set_screen('config')
+
+        elif key in ["h", "H"]:
+            WINDOW.screen(None, 'help')
+            self.set_screen('help')
+
+        elif key == '1':
+            WINDOW.frame.set_focus_path(['body',0,0,1])
+
+        elif key == '2':
+            WINDOW.frame.set_focus_path(['body',0,0,3,0])
+
+        elif key == '3':
+            WINDOW.frame.set_focus_path(['body',0,1,2])
+
+        elif key == '4':
+            WINDOW.frame.set_focus_path(['body',0,1,3])
+
+
+        else:
+            return key
+
+    def set_screen(self, screen):
+        self.screen = screen
+        p = self.states[screen]['states'][self.states[screen]['current']]['prompt']
+        KEYPROMPT.set('KEYS: '+p)
+        WINDOW.modebox.set_text('mode: %s | default' % (self.screen))
+
+    def set_state(self, state):
+        self.states[self.screen]['current'] = state
+        p = self.states[self.screen]['states'][state]['prompt']
+        KEYPROMPT.set('KEYS: '+p)
+        WINDOW.modebox.set_text('mode: %s | %s' % (self.screen, state))
+
+    def is_allowed_key(self, key):
+        state = self.states['browser']['current']
+        if key.lower() not in self.states['browser']['states'][state]['keys']:
+            return False
+        return True
 
 class PiDropWindow(object):
 
     screens = {}
-    prompts = {
-        'welcome':' ',
-        'browser':False,
-        'help':'[B]ack to main menu | [F]ile browser | [C]onfig | [Q]uit',
-        'config':'[B]ack to main menu | [F]ile browser | [H]elp | [Q]uit'
-    }
 
     def __init__(self):
         global DBX
@@ -1630,7 +1819,9 @@ class PiDropWindow(object):
         self.main = urwid.AttrMap(urwid.ListBox([]), 'body')
         self.screen(None, 'welcome')
         self.header = urwid.Text('PiDrop - manage your dropbox')
-        self.footer = urwid.Pile([urwid.Divider(' '),KEYPROMPT.build(),urwid.Divider(' ')])
+        self.modebox = urwid.Text('', align='right')
+        cols = urwid.Columns([('weight',4,KEYPROMPT.build()),urwid.AttrMap(self.modebox, 'mode')])
+        self.footer = urwid.Pile([urwid.Divider(' '),cols,urwid.Divider(' ')])
 
     def screen(self, d, screen):
         if 'LOOP' in globals():
@@ -1649,7 +1840,6 @@ class PiDropWindow(object):
         elif screen == 'config':
             self.screens[screen] = self.config()
             self.main.original_widget = self.screens[screen]
-        KEYPROMPT.set(self.prompts[screen])
 
     def set_palette(self):
         if CONFIG.get('palette'):
@@ -1657,12 +1847,13 @@ class PiDropWindow(object):
         else: return palettes['light']
 
     def build(self):
-        self.body = urwid.AttrMap(urwid.Frame(
+        self.frame = PiDropMainFrame(
             self.main,
             header=urwid.AttrMap(self.header, 'header'),
             footer=urwid.AttrMap(urwid.Padding(self.footer, left=5, right=5), 'footer')
-        ),'body')
-        return self.body
+        )
+        self.frame.set_screen('welcome')
+        return urwid.AttrMap(self.frame,'body')
 
     def welcome(self):
         welcome = urwid.AttrMap(urwid.LineBox(urwid.Text('Select an option below by either clicking the option or pressing the associated key')),'details')
@@ -1673,9 +1864,10 @@ class PiDropWindow(object):
         help_btn  = urwid.Button('[H]elp')
         urwid.connect_signal(help_btn,'click',self.screen, 'help')
         options = urwid.ListBox([style_btn(browser_btn),style_btn(config_btn),style_btn(help_btn)])
-        return urwid.Padding(urwid.Filler(MainContainer([('pack',urwid.Divider(' ')),('pack',welcome),('pack',urwid.Divider(' ')), options]), height=10), left=5, right=5, width=70, align='center')
+        return urwid.Padding(urwid.Filler(urwid.Pile([('pack',urwid.Divider(' ')),('pack',welcome),('pack',urwid.Divider(' ')), options]), height=10), left=5, right=5, width=70, align='center')
 
     def help(self):
+        self.frame.set_screen('help')
         data = help_questions
         topnode = HelpParentNode(data)
         helplist = urwid.AttrMap(urwid.TreeListBox(urwid.TreeWalker(topnode)), 'body')
@@ -1685,9 +1877,10 @@ class PiDropWindow(object):
             Use your mouse or the arrow keys on your keyboard to navigate through though question/answer list below.
 
             Throughout this UI you will find a list of available keys for the current screen in the footer."""))
-        return MainContainer([('pack',urwid.Divider(' ')),('pack',nfo),('pack',urwid.Divider(' ')), helplist])
+        return urwid.Pile([('pack',urwid.Divider(' ')),('pack',nfo),('pack',urwid.Divider(' ')), helplist])
 
     def config(self):
+        self.frame.set_screen('config')
         w = ConfigWidget()
         return w.build()
 
@@ -1700,10 +1893,12 @@ class PiDropWindow(object):
         global NOTIFIER
         global SYNCED_FILES
 
+        self.frame.set_screen('browser')
+
         SYNCED_FILES = SyncedFiles()
         PROPSBOX = PropsWidget()
-        IMPORTER = ImporterWidget(CONFIG.get('import-dir'), 'importer', 'Import Folder')
-        EXPORTER = ExporterWidget(CONFIG.get('export-dir'), 'exporter', 'Export Folder')
+        IMPORTER = ImporterWidget(CONFIG.get('import-dir'), 'importer', '[3] Import Folder')
+        EXPORTER = ExporterWidget(CONFIG.get('export-dir'), 'exporter', '[4] Export Folder')
         BROWSER = FileBrowserWidget()
         SEARCHBAR = SearchBarWidget()
         NOTIFIER = NotificationsWidget()
@@ -1714,14 +1909,14 @@ class PiDropWindow(object):
             urwid.AttrMap(urwid.LineBox(IMPORTER.build()), 'body', 'body_focus'),
             urwid.AttrMap(urwid.LineBox(EXPORTER.build()), 'body', 'body_focus')]
         )
-        IMPORTER.set_state(1)
-        EXPORTER.frame.keyp = ' '
-        PROPSBOX.frame.keyp = ' '
 
         def rightcol_fchanged(pos):
-            w = right_boxes.__getitem__(pos)
-            if hasattr(w, 'keyp') and IMPORTER.state == 1:
-                KEYPROMPT.set(w.keyp)
+            right_boxes._invalidate()
+            if WINDOW.frame.states['browser']['current'] != 'importer files selected':
+                if pos == 2:
+                    WINDOW.frame.set_state('importer focussed')
+                elif pos == 3:
+                    WINDOW.frame.set_state('exporter focussed')
 
         right_boxes._contents.set_focus_changed_callback(rightcol_fchanged)
         self.right = urwid.AttrMap(
@@ -1737,18 +1932,31 @@ class PiDropWindow(object):
             ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.build(), left=2, right=2))
         ]),'body')
+        self.left.state = 1
+
+        def left_fchanged(pos):
+            self.left.original_widget._invalidate()
+            self.left.original_widget.state = pos
+            if pos == 1:
+                WINDOW.frame.set_state('default')
+            elif pos == 3:
+                WINDOW.frame.set_state(SEARCHBAR.state)
+
+        self.left.original_widget._contents.set_focus_changed_callback(left_fchanged)
 
         cols = urwid.Columns([('weight', 3,self.left), self.right])
 
         def cols_fchanged(pos):
+            cols._invalidate()
             if pos == 1:
                 rightcol_fchanged(right_boxes.focus_position)
-            elif IMPORTER.state == 1:
-                KEYPROMPT.set()
+            elif WINDOW.frame.states['browser']['current'] != 'importer files selected':
+                #WINDOW.frame.set_state('default')
+                left_fchanged(self.left.original_widget.state)
 
         cols._contents.set_focus_changed_callback(cols_fchanged)
 
-        return MainContainer([cols])
+        return urwid.Pile([cols])
 
 class Cfg(object):
 
@@ -1815,7 +2023,7 @@ def unhandled_input(k):
         raise urwid.ExitMainLoop()
 
 def loading(target):
-    pile = urwid.Filler(MainContainer([('pack',urwid.Divider(' ')),('pack',urwid.AttrMap(urwid.Text('Loading...'),'loading')),('pack',urwid.Divider(' '))]), height=10)
+    pile = urwid.Filler(urwid.Pile([('pack',urwid.Divider(' ')),('pack',urwid.AttrMap(urwid.Text('Loading...'),'loading')),('pack',urwid.Divider(' '))]), height=10)
     target.original_widget = urwid.AttrMap(urwid.Frame(
         urwid.Padding(pile, left=5, right=5, width=10, align='center')
     ),'body')
