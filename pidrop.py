@@ -530,7 +530,7 @@ def sync_local(folder):
         dirs[:] = keep
 
 def create_remote_folder(path):
-    remote_path = path[len(CONFIG.get('root_dir'))-1:]
+    remote_path = path[len(CONFIG.get('rootdir'))-1:]
     dblog(remote_path)
     try:
         res = dbx.files_create_folder_v2(
