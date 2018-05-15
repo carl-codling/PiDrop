@@ -1933,7 +1933,7 @@ class PiDropWindow(object):
             ('pack',urwid.Divider(' ')),
             ('pack',urwid.Padding(SEARCHBAR.build(), left=2, right=2))
         ]),'body')
-        self.left.state = 1
+        self.left.original_widget.state = 1
 
         def left_fchanged(pos):
             self.left.original_widget._invalidate()
