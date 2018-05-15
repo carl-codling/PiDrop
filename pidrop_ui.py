@@ -921,7 +921,7 @@ class PiDropTreeList(urwid.TreeListBox):
         IMPORTER.listbox.reload_walker()
         NOTIFIER.set('%d Selected files and folders were imported.' % (i), 'success')
         IMPORTER.listbox.selected = []
-        IMPORTER.set_state(1)
+        IMPORTER.listbox.set_importer_state()
         self.fmode = None
 
     def reload_walker(self):
@@ -935,6 +935,7 @@ class PiDropTreeList(urwid.TreeListBox):
         BROWSER.listbox_container.original_widget = BROWSER.listbox
 
 class ImporterTreeList(urwid.TreeListBox):
+
     selected = []
 
     def keypress(self, size, key):
@@ -1968,7 +1969,7 @@ class Cfg(object):
             return self.data
         elif key in self.data:
             return self.data[key]
-        return false
+        return False
 
     def load(self):
         if not os.path.isfile(CWD+'/cfg.json'):
