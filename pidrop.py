@@ -488,6 +488,27 @@ def sync_local(folder):
         large_upload_size = CONFIG.get('large_upload_size')
     else:
         large_upload_size = 10
+
+    # first create any new dirs
+    for dn, dirs, files in os.walk(rootdir+'/'+folder):
+        subfolder = dn[len(rootdir):].strip(os.path.sep)
+        keep = []
+        for name in dirs:
+            fullname = os.path.join(dn, name)
+            if name.startswith('.'):
+                dblog('Skipping dot directory: '+ name)
+            elif name.startswith('@') or name.endswith('~'):
+                dblog('Skipping temporary directory: '+ name)
+            elif name == '__pycache__':
+                dblog('Skipping generated directory: '+ name)
+            elif fullname not in path_list[folder]:
+                dblog('FOUND FOLDER NOT AT SERVER : '+fullname)
+                create_remote_folder(fullname)
+            else:
+                keep.append(name)
+        dirs[:] = keep
+
+    # next upload any new files
     for dn, dirs, files in os.walk(rootdir+'/'+folder):
         subfolder = dn[len(rootdir):].strip(os.path.sep)
         dblog('Descending into: '+ subfolder+ '...')
@@ -522,9 +543,6 @@ def sync_local(folder):
                 dblog('Skipping temporary directory: '+ name)
             elif name == '__pycache__':
                 dblog('Skipping generated directory: '+ name)
-            elif fullname not in path_list[folder]:
-                dblog('FOUND FOLDER NOT AT SERVER : '+fullname)
-                create_remote_folder(fullname)
             else:
                 keep.append(name)
         dirs[:] = keep
@@ -540,7 +558,19 @@ def create_remote_folder(path):
         dblog('*** API error: '+ str(err))
         return None
     dblog('CREATED REMOTE FOLDER: '+remote_path)
-    flist[path] = os.path.basename(path)
+
+    fname = os.path.basename(path)
+    fname_lower = fname.lower()
+    if fname != fname_lower:
+        new_path = os.path.dirname(path)+os.sep+fname_lower
+        try:
+            os.rename(path, new_path)
+            path = new_path
+        except OSError as err:
+            dblog('*** OS error: '+ str(err))
+            return None
+    flist[path] = fname
+
 
 def upload(path, overwrite=False):
     """
