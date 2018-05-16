@@ -1673,7 +1673,7 @@ class PiDropMainFrame(urwid.Frame):
             'states':{
                 'default':{
                     'prompt':'[B]ack to main menu | [S]elect a file/dir | [N]ew directory | [R]ename file/dir | [P]roperties | [H]elp | [Q]uit',
-                    'keys':['b','s','n','r','p','h','q','d','e']
+                    'keys':['b','s','n','r','p','h','q','d','e','esc']
                 },
                 'files selected':{
                     'prompt':'[S]elect a file/dir | [M]ove selected files | [D]elete selected files | [E]xport selected files | [ESC] Cancel',
